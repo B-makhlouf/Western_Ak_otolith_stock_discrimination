@@ -81,3 +81,31 @@ watersheds <- filtered_results$Watershed
 cat("Dimensions of measurement array:", dim(measurement_array), "\n")
 cat("First few IDs:", head(ids), "\n")
 cat("First few watersheds:", head(watersheds), "\n")
+
+
+############### RUN A PCA ####################
+results <- prcomp(measurement_array, scale. = TRUE)
+
+# Get the PCA scores (first two principal components)
+pca_scores <- as.data.frame(results$x)
+
+# Combine PCA scores with metadata
+pca_results <- tibble(
+  PC1 = pca_scores$PC1,
+  PC2 = pca_scores$PC2,
+  Fish_id = ids,
+  Watershed = watersheds
+)
+
+filtered_pca_results <- pca_results %>%
+  filter(PC1 >= -300)
+
+# Plot the filtered PCA results
+ggplot(filtered_pca_results, aes(x = PC1, y = PC2, color = Watershed)) +
+  geom_point(size = 1.5) +
+  theme_minimal() +
+  labs(title = "PCA of Iso Values by Watershed (Outlier Removed)",
+       x = "Principal Component 1",
+       y = "Principal Component 2") +
+  theme(legend.title = element_blank()) # Optional: remove legend title
+
