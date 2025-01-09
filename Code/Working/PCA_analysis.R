@@ -9,7 +9,7 @@ Kusko2017_directory <- here("Data/Intermediate/Cleaned and Trimmed/2017 Kusko")
 
 # List all files in each directory
 Nush2014_files <- list.files(Nush2014_directory, full.names = TRUE)
-#Yukon2015_files <- list.files(Yukon2015_directory, full.names = TRUE)
+Yukon2015_files <- list.files(Yukon2015_directory, full.names = TRUE)
 Kusko2017_files <- list.files(Kusko2017_directory, full.names = TRUE)
 
 # Function to interpolate data to 1000 points
@@ -53,7 +53,7 @@ process_directory <- function(files) {
 
 # Process all three datasets
 Nush2014_results <- process_directory(Nush2014_files)
-#Yukon2015_results <- process_directory(Yukon2015_files)
+Yukon2015_results <- process_directory(Yukon2015_files)
 Kusko2017_results <- process_directory(Kusko2017_files)
 
 # Combine results into a single tibble
