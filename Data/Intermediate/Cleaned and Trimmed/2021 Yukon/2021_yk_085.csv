@@ -1,4 +1,4 @@
-Cycle,Time,Iso,Sr88,Microns,FishID,Watershed,Year
+Cycle,Time,Iso,Sr88,Microns,Fish_id,Watershed,Year
 5,2.62,1.9537571981636197e+000,4.7219373901055228e-005,5.24,2021_yk_085,Yukon,2021
 6,3.144,Invalid Norm,6.5916551959848660e-005,6.288,2021_yk_085,Yukon,2021
 7,3.668,Invalid Norm,1.2698067094870421e-004,7.336,2021_yk_085,Yukon,2021
