@@ -59,7 +59,7 @@ Kusko2017_results <- process_directory(Kusko2017_files)
 # Combine results into a single tibble
 combined_results <- bind_rows(
   Nush2014_results,
-  #Yukon2015_results,
+  Yukon2015_results,
   Kusko2017_results
 )
 
@@ -73,17 +73,30 @@ measurement_array <- do.call(cbind, filtered_results$Iso)
 # Transpose the matrix to get individuals as rows
 measurement_array <- t(measurement_array)
 
+# Diagnostic: Check for issues
+cat("Checking for missing and infinite values in measurement_array...\n")
+cat("Any NA values? ", anyNA(measurement_array), "\n")
+cat("Any infinite values? ", any(is.infinite(measurement_array)), "\n")
+
+# Handle missing and infinite values
+if (anyNA(measurement_array) || any(is.infinite(measurement_array))) {
+  measurement_array[is.infinite(measurement_array)] <- NA # Replace infinite values with NA
+  measurement_array <- apply(measurement_array, 2, function(x) {
+    if (any(is.na(x))) {
+      x[is.na(x)] <- mean(x, na.rm = TRUE) # Replace NA with column mean
+    }
+    return(x)
+  })
+}
+
+# Check dimensions after cleaning
+cat("Dimensions of cleaned measurement_array:", dim(measurement_array), "\n")
+
 # Extract the metadata (ID and Watershed)
 ids <- filtered_results$Fish_id
 watersheds <- filtered_results$Watershed
 
-# Output results
-cat("Dimensions of measurement array:", dim(measurement_array), "\n")
-cat("First few IDs:", head(ids), "\n")
-cat("First few watersheds:", head(watersheds), "\n")
-
-
-############### RUN A PCA ####################
+# Run PCA
 results <- prcomp(measurement_array, scale. = TRUE)
 
 # Get the PCA scores (first two principal components)
@@ -97,8 +110,11 @@ pca_results <- tibble(
   Watershed = watersheds
 )
 
+# Optional: Filter out extreme outliers
 filtered_pca_results <- pca_results %>%
-  filter(PC1 >= -300)
+  filter(PC1 >= -150) %>%
+  filter(PC2 < 40) %>%
+  filter(PC2 > -10)
 
 # Plot the filtered PCA results
 ggplot(filtered_pca_results, aes(x = PC1, y = PC2, color = Watershed)) +
@@ -108,4 +124,3 @@ ggplot(filtered_pca_results, aes(x = PC1, y = PC2, color = Watershed)) +
        x = "Principal Component 1",
        y = "Principal Component 2") +
   theme(legend.title = element_blank()) # Optional: remove legend title
-
