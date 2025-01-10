@@ -160,14 +160,10 @@ pca_results_no_outliers <- tibble(
 )
 
 # Plot the PCA results without outliers
-ggplot(pca_results_no_outliers, aes(x = PC1, y = PC2, color = Watershed)) +
-  geom_point(size = 1, alpha = .5) +
+pca_plot<-ggplot(pca_results_no_outliers, aes(x = PC1, y = PC2, color = Watershed)) +
+  geom_point(size = 1, alpha = .3) +
   theme_classic() +
   labs(title = "PCA of Iso Values by Watershed (No Outliers)",
        x = "Principal Component 1",
        y = "Principal Component 2") +
   theme(legend.title = element_blank())
-
-
-
-
