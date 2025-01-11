@@ -1,82 +1,77 @@
 # Load necessary libraries
 library(tidyverse)
 library(here)
-
-# Define directories with ablation TS data
-Nush2014_directory <- here("Data/Intermediate/Cleaned and Trimmed/2014 Nush")
-Nush2015_directory <- here("Data/Intermediate/Cleaned and Trimmed/2015 Nush")
-Nush2011_directory <- here("Data/Intermediate/Cleaned and Trimmed/2011 Nush")
-Yukon2015_directory <- here("Data/Intermediate/Cleaned and Trimmed/2015 Yukon")
-Yukon2016_directory <- here("Data/Intermediate/Cleaned and Trimmed/2016 Yukon")
-Yukon2017_directory <- here("Data/Intermediate/Cleaned and Trimmed/2017 Yukon")
-Yukon2019_directory <- here("Data/Intermediate/Cleaned and Trimmed/2019 Yukon")
-Yukon2021_directory <- here("Data/Intermediate/Cleaned and Trimmed/2021 Yukon")
-Kusko2015_directory <- here("Data/Intermediate/Cleaned and Trimmed/2015 Kusko")
-Kusko2017_directory <- here("Data/Intermediate/Cleaned and Trimmed/2017 Kusko")
-Kusko2019_directory <- here("Data/Intermediate/Cleaned and Trimmed/2019 Kusko")
-kusko2020_directory <- here("Data/Intermediate/Cleaned and Trimmed/2020 Kusko")
-kusko2021_directory <- here("Data/Intermediate/Cleaned and Trimmed/2021 Kusko")
-
-# List all files in each directory
-all_files <- list(
-  Nush2014 = list.files(Nush2014_directory, full.names = TRUE),
-  Nush2015 = list.files(Nush2015_directory, full.names = TRUE),
-  Nush2011 = list.files(Nush2011_directory, full.names = TRUE),
-  Yukon2015 = list.files(Yukon2015_directory, full.names = TRUE),
-  Yukon2016 = list.files(Yukon2016_directory, full.names = TRUE),
-  Yukon2017 = list.files(Yukon2017_directory, full.names = TRUE),
-  Yukon2019 = list.files(Yukon2019_directory, full.names = TRUE),
-  Yukon2021 = list.files(Yukon2021_directory, full.names = TRUE),
-  Kusko2015 = list.files(Kusko2015_directory, full.names = TRUE),
-  Kusko2017 = list.files(Kusko2017_directory, full.names = TRUE),
-  Kusko2019 = list.files(Kusko2019_directory, full.names = TRUE),
-  Kusko2020 = list.files(kusko2020_directory, full.names = TRUE),
-  Kusko2021 = list.files(kusko2021_directory, full.names = TRUE)
-)
-
-# Function to interpolate Iso data to 1000 points
-interpolate_data <- function(data, num_points = 1700) {
-  if (!"Iso" %in% names(data) || sum(!is.na(data$Iso)) < 2) {
-    return(rep(NA, num_points)) # Return NA if not enough points for interpolation
-  }
-  
-  data <- data %>%
-    mutate(Point = seq(1, num_points, length.out = n()))
-  
-  interpolated <- tibble(
-    Point = seq(1, num_points),
-    Iso = approx(data$Point, data$Iso, xout = seq(1, num_points))$y
-  )
-  
-  return(interpolated$Iso)
-}
-
-# Function to process all files in a directory
-process_directory <- function(files) {
+# Function to process all files in a directory and filter by Fish_id
+process_directory <- function(files, metadata) {
   files %>%
     map_df(~ {
       tryCatch({
-        # Read individual file
-        ind_data <- read_csv(.x) %>% select(Iso, Watershed, Fish_id)
+        # Extract Fish_id from the filename (assuming the Fish_id is part of the filename)
+        file_name <- basename(.x)
+        Fish_id_from_filename <- tools::file_path_sans_ext(file_name)
         
-        # Extract metadata
-        id <- ind_data$Fish_id[1]
-        watershed <- ind_data$Watershed[1]
-        
-        # Interpolate Iso
-        interpolated <- interpolate_data(ind_data)
-        
-        tibble(
-          Fish_id = id,
-          Watershed = watershed,
-          Iso = list(interpolated)
-        )
+        # Check if the Fish_id is in the metadata
+        if (Fish_id_from_filename %in% metadata$Fish_id) {
+          # Read individual file
+          ind_data <- read_csv(.x) %>% select(Iso, Watershed, Fish_id)
+          
+          # Extract metadata
+          watershed <- ind_data$Watershed[1]
+          
+          # Interpolate Iso
+          interpolated <- interpolate_data(ind_data)
+          
+          tibble(
+            Fish_id = Fish_id_from_filename,
+            Watershed = watershed,
+            Iso = list(interpolated)
+          )
+        } else {
+          # If Fish_id does not match, return an empty tibble
+          return(tibble(Fish_id = NA, Watershed = NA, Iso = list(rep(NA, 1000))))
+        }
       }, error = function(e) {
         message("Error processing file: ", .x, " - ", e$message)
         return(tibble(Fish_id = NA, Watershed = NA, Iso = list(rep(NA, 1000))))
       })
     }, .id = "File_Index") # Add file index for debugging
 }
+
+# List all files in each directory
+all_files <- list(
+  Nush2014 = list.files(Nush2014_directory, full.names = TRUE),
+  Yukon2015 = list.files(Yukon2015_directory, full.names = TRUE),
+  Kusko2017 = list.files(Kusko2017_directory, full.names = TRUE)
+)
+
+# Process all datasets for each directory with corresponding metadata
+results_list_Nush <- process_directory(all_files$Nush2014, Nush2014_metadata)
+results_list_Yukon <- process_directory(all_files$Yukon2015, Yukon2015_metadata)
+results_list_Kusko <- process_directory(all_files$Kusko2017, Kusko2017_metadata)
+
+# Combine results into a single tibble
+combined_results <- bind_rows(
+  list(
+    Nush2014 = results_list_Nush,
+    Yukon2015 = results_list_Yukon,
+    Kusko2017 = results_list_Kusko
+  ),
+  .id = "Dataset"
+)
+
+# Remove rows with all NA in the Iso column
+filtered_results <- combined_results %>%
+  filter(map_lgl(Iso, ~ !all(is.na(.))))
+
+
+
+
+
+
+
+
+
+
 
 # Process all datasets
 results_list <- map(all_files, process_directory)
@@ -170,74 +165,109 @@ pca_plot<-ggplot(pca_results_no_outliers, aes(x = PC1, y = PC2, color = Watershe
 
 pca_plot
 
+######################################################
+######### R Shiny app for interaction 
 library(shiny)
 library(tidyverse)
 
+# Load your PCA data and measurement array
+# Assume pca_results_no_outliers, ids, and measurement_array are preloaded
+
 # Define UI
 ui <- fluidPage(
-  titlePanel("PCA Analysis of Iso Values by Watershed"),
+  titlePanel("PCA Analysis Viewer"),
   sidebarLayout(
     sidebarPanel(
-      h4("Instructions:"),
-      p("Click on a point in the PCA plot to display the Iso vs Distance plot for the selected Fish ID.")
+      helpText("Click on a point in the PCA plot to view Iso vs. Distance for that Fish ID."),
+      helpText("Drag to zoom in on the PCA plot."),
+      actionButton("resetZoom", "Reset Zoom")  # Add Reset Zoom button
     ),
     mainPanel(
-      plotOutput("pcaPlot", click = "plot_click"),
+      plotOutput("pcaPlot", 
+                 click = "pcaClick", 
+                 brush = brushOpts(id = "pcaBrush", resetOnNew = TRUE)),
       plotOutput("isoPlot")
     )
   )
 )
 
 # Define Server
-server <- function(input, output) {
-  # Render the PCA plot
+server <- function(input, output, session) {
+  
+  # Reactive values for zoom region
+  zoomRegion <- reactiveValues(x = NULL, y = NULL)
+  
+  # Observe brush input for zoom
+  observeEvent(input$pcaBrush, {
+    brush <- input$pcaBrush
+    if (!is.null(brush)) {
+      zoomRegion$x <- c(brush$xmin, brush$xmax)
+      zoomRegion$y <- c(brush$ymin, brush$ymax)
+    } else {
+      zoomRegion$x <- NULL
+      zoomRegion$y <- NULL
+    }
+  })
+  
+  # Reset zoom when the reset button is clicked
+  observeEvent(input$resetZoom, {
+    zoomRegion$x <- NULL
+    zoomRegion$y <- NULL
+  })
+  
+  # Render PCA Plot with zoom
   output$pcaPlot <- renderPlot({
     ggplot(pca_results_no_outliers, aes(x = PC1, y = PC2, color = Watershed)) +
-      geom_point(size = 1, alpha = 0.5) +
+      geom_point(size = 2, alpha = 0.8) +
       theme_classic() +
       labs(title = "PCA of Iso Values by Watershed (No Outliers)",
            x = "Principal Component 1",
            y = "Principal Component 2") +
-      theme(legend.title = element_blank())
+      theme(legend.title = element_blank()) +
+      coord_cartesian(
+        xlim = zoomRegion$x,
+        ylim = zoomRegion$y
+      )
   })
   
-  # Plot Iso vs Distance for selected Fish ID
+  # Reactive value to store the selected Fish ID
+  selectedFish <- reactiveVal()
+  
+  # Update selected Fish ID based on click
+  observeEvent(input$pcaClick, {
+    nearPoint <- nearPoints(pca_results_no_outliers, input$pcaClick, threshold = 5, maxpoints = 1)
+    if (nrow(nearPoint) > 0) {
+      selectedFish(nearPoint$Fish_id[1])
+    }
+  })
+  
+  # Render Iso Plot
   output$isoPlot <- renderPlot({
-    # Get the Fish ID of the clicked point
-    click <- input$plot_click
-    if (is.null(click)) return(NULL)
+    req(selectedFish())
     
-    # Find the nearest point in the PCA plot
-    nearest_point <- pca_results_no_outliers %>%
-      mutate(distance = sqrt((PC1 - click$x)^2 + (PC2 - click$y)^2)) %>%
-      slice_min(distance, n = 1)
+    # Find the index of the selected Fish ID
+    fishIndex <- which(ids == selectedFish())
     
-    selected_fish_id <- nearest_point$Fish_id
-    
-    # Check if a valid Fish ID is found
-    if (is.null(selected_fish_id) || is.na(selected_fish_id)) return(NULL)
-    
-    # Find the Iso values for the selected Fish ID
-    fish_index <- which(ids == selected_fish_id)
-    iso_values <- measurement_array[fish_index, ]
-    
-    # Create a plot of Iso vs Distance
-    iso_data <- tibble(
-      Distance = seq_along(iso_values),
-      Iso = iso_values
+    # Retrieve Iso data
+    isoData <- tibble(
+      Distance = seq_along(measurement_array[fishIndex, ]),
+      Iso = measurement_array[fishIndex, ]
     )
     
-    ggplot(iso_data, aes(x = Distance, y = Iso)) +
-      geom_line(color = "blue") +
-      geom_point(size = 1, alpha = 0.7) +
+    # Calculate moving average
+    isoData <- isoData %>%
+      mutate(MovingAvg = zoo::rollapply(Iso, width = 60, FUN = mean, fill = NA, align = "center"))
+    
+    # Plot Iso vs Distance with moving average
+    ggplot(isoData, aes(x = Distance, y = Iso)) +
+      geom_point(alpha = 0.5) +
+      geom_line(aes(y = MovingAvg), color = "blue", size = 1) +
       theme_classic() +
-      labs(title = paste("Iso vs Distance for Fish ID:", selected_fish_id),
+      labs(title = paste("Iso vs. Distance for Fish ID:", selectedFish()),
            x = "Distance",
            y = "Iso")
   })
 }
 
-# Run the app
-shinyApp(ui = ui, server = server)
-
-
+# Run the App
+shinyApp(ui, server)
