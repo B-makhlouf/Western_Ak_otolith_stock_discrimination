@@ -167,3 +167,5 @@ pca_plot<-ggplot(pca_results_no_outliers, aes(x = PC1, y = PC2, color = Watershe
        x = "Principal Component 1",
        y = "Principal Component 2") +
   theme(legend.title = element_blank())
+
+pca_plot
