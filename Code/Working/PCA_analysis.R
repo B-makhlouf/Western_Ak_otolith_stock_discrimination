@@ -135,11 +135,11 @@ ggplot(pca_results, aes(x = PC1, y = PC2, color = Watershed)) +
 
 # outliers are those with a PCA score less than -5o or greater that 50 for either PCA 
 outliers <- pca_results %>%
-  filter(PC1 < -50 | PC1 > 50 | PC2 < -50 | PC2 > 50)
+  filter(PC1 < -30 | PC1 > 30 | PC2 < -30 | PC2 > 30)
 
 # Remove the outliers from measurment array 
 outliers_index <- pca_results %>%
-  filter(PC1 < -50 | PC1 > 50 | PC2 < -50 | PC2 > 50) %>%
+  filter(PC1 < -30 | PC1 > 30 | PC2 < -30 | PC2 > 30) %>%
   pull(Fish_id)
 
 # Remove the outliers from the measurement array
@@ -169,3 +169,75 @@ pca_plot<-ggplot(pca_results_no_outliers, aes(x = PC1, y = PC2, color = Watershe
   theme(legend.title = element_blank())
 
 pca_plot
+
+library(shiny)
+library(tidyverse)
+
+# Define UI
+ui <- fluidPage(
+  titlePanel("PCA Analysis of Iso Values by Watershed"),
+  sidebarLayout(
+    sidebarPanel(
+      h4("Instructions:"),
+      p("Click on a point in the PCA plot to display the Iso vs Distance plot for the selected Fish ID.")
+    ),
+    mainPanel(
+      plotOutput("pcaPlot", click = "plot_click"),
+      plotOutput("isoPlot")
+    )
+  )
+)
+
+# Define Server
+server <- function(input, output) {
+  # Render the PCA plot
+  output$pcaPlot <- renderPlot({
+    ggplot(pca_results_no_outliers, aes(x = PC1, y = PC2, color = Watershed)) +
+      geom_point(size = 1, alpha = 0.5) +
+      theme_classic() +
+      labs(title = "PCA of Iso Values by Watershed (No Outliers)",
+           x = "Principal Component 1",
+           y = "Principal Component 2") +
+      theme(legend.title = element_blank())
+  })
+  
+  # Plot Iso vs Distance for selected Fish ID
+  output$isoPlot <- renderPlot({
+    # Get the Fish ID of the clicked point
+    click <- input$plot_click
+    if (is.null(click)) return(NULL)
+    
+    # Find the nearest point in the PCA plot
+    nearest_point <- pca_results_no_outliers %>%
+      mutate(distance = sqrt((PC1 - click$x)^2 + (PC2 - click$y)^2)) %>%
+      slice_min(distance, n = 1)
+    
+    selected_fish_id <- nearest_point$Fish_id
+    
+    # Check if a valid Fish ID is found
+    if (is.null(selected_fish_id) || is.na(selected_fish_id)) return(NULL)
+    
+    # Find the Iso values for the selected Fish ID
+    fish_index <- which(ids == selected_fish_id)
+    iso_values <- measurement_array[fish_index, ]
+    
+    # Create a plot of Iso vs Distance
+    iso_data <- tibble(
+      Distance = seq_along(iso_values),
+      Iso = iso_values
+    )
+    
+    ggplot(iso_data, aes(x = Distance, y = Iso)) +
+      geom_line(color = "blue") +
+      geom_point(size = 1, alpha = 0.7) +
+      theme_classic() +
+      labs(title = paste("Iso vs Distance for Fish ID:", selected_fish_id),
+           x = "Distance",
+           y = "Iso")
+  })
+}
+
+# Run the app
+shinyApp(ui = ui, server = server)
+
+
