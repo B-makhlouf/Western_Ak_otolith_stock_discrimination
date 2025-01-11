@@ -1,80 +1,72 @@
 # Load necessary libraries
 library(tidyverse)
 library(here)
+
+# Define directories and their corresponding metadata files
+data_directories <- list(
+  Nush2014 = here("/Users/benjaminmakhlouf/Research_repos/Schindler_GitHub/Arctic_Yukon_Kuskokwim_Data/Data/Otolith Data/LA Data/Trimmed/2014 Nush"),
+  Yukon2015 = here("/Users/benjaminmakhlouf/Research_repos/Schindler_GitHub/Arctic_Yukon_Kuskokwim_Data/Data/Otolith Data/LA Data/Trimmed/2015 Yukon"),
+  Yukon2016 = here("/Users/benjaminmakhlouf/Research_repos/Schindler_GitHub/Arctic_Yukon_Kuskokwim_Data/Data/Otolith Data/LA Data/Trimmed/2016 Yukon"),
+  Kusko2017 = here("/Users/benjaminmakhlouf/Research_repos/Schindler_GitHub/Arctic_Yukon_Kuskokwim_Data/Data/Otolith Data/LA Data/Trimmed/2017 Kusko"),
+  Kusko2019 = here("/Users/benjaminmakhlouf/Research_repos/Schindler_GitHub/Arctic_Yukon_Kuskokwim_Data/Data/Otolith Data/LA Data/Trimmed/2019 Kusko")
+)
+
+metadata_files <- list(
+  Nush2014 = "/Users/benjaminmakhlouf/Research_repos/Schindler_GitHub/Arctic_Yukon_Kuskokwim_Data/Data/Natal Origins/Cleaned/Nushugak_2014_Cleaned_Natal_Origins.csv",
+  Yukon2015 = "/Users/benjaminmakhlouf/Research_repos/Schindler_GitHub/Arctic_Yukon_Kuskokwim_Data/Data/Final_QC_NatalOriginCPUE/ALL_DATA_2015_Yukon_Natal_Origins.csv",
+  Yukon2016 = "/Users/benjaminmakhlouf/Research_repos/Schindler_GitHub/Arctic_Yukon_Kuskokwim_Data/Data/Final_QC_NatalOriginCPUE/ALL_DATA_2016_Yukon_Natal_Origins.csv",
+  Kusko2017 = "/Users/benjaminmakhlouf/Research_repos/Schindler_GitHub/Arctic_Yukon_Kuskokwim_Data/Data/Final_QC_NatalOriginCPUE/ALL_DATA_2017_Kusko_Natal_Origins.csv",
+  Kusko2019 = "/Users/benjaminmakhlouf/Research_repos/Schindler_GitHub/Arctic_Yukon_Kuskokwim_Data/Data/Final_QC_NatalOriginCPUE/ALL_DATA_2019_Kusko_Natal_Origins.csv"
+)
+
+# Function to interpolate Iso values
+interpolate_data <- function(data) {
+  if (nrow(data) < 2 || all(is.na(data$Iso))) {
+    return(rep(NA, 1000))
+  }
+  
+  approx(
+    x = seq_along(data$Iso),
+    y = data$Iso,
+    xout = seq(1, nrow(data), length.out = 1000),
+    method = "linear",
+    rule = 2
+  )$y
+}
+
 # Function to process all files in a directory and filter by Fish_id
 process_directory <- function(files, metadata) {
   files %>%
     map_df(~ {
       tryCatch({
-        # Extract Fish_id from the filename (assuming the Fish_id is part of the filename)
         file_name <- basename(.x)
         Fish_id_from_filename <- tools::file_path_sans_ext(file_name)
         
-        # Check if the Fish_id is in the metadata
         if (Fish_id_from_filename %in% metadata$Fish_id) {
-          # Read individual file
           ind_data <- read_csv(.x) %>% select(Iso, Watershed, Fish_id)
-          
-          # Extract metadata
           watershed <- ind_data$Watershed[1]
-          
-          # Interpolate Iso
           interpolated <- interpolate_data(ind_data)
-          
           tibble(
             Fish_id = Fish_id_from_filename,
             Watershed = watershed,
             Iso = list(interpolated)
           )
         } else {
-          # If Fish_id does not match, return an empty tibble
-          return(tibble(Fish_id = NA, Watershed = NA, Iso = list(rep(NA, 1000))))
+          tibble(Fish_id = NA, Watershed = NA, Iso = list(rep(NA, 1000)))
         }
       }, error = function(e) {
         message("Error processing file: ", .x, " - ", e$message)
-        return(tibble(Fish_id = NA, Watershed = NA, Iso = list(rep(NA, 1000))))
+        tibble(Fish_id = NA, Watershed = NA, Iso = list(rep(NA, 1000)))
       })
-    }, .id = "File_Index") # Add file index for debugging
+    })
 }
 
-# List all files in each directory
-all_files <- list(
-  Nush2014 = list.files(Nush2014_directory, full.names = TRUE),
-  Yukon2015 = list.files(Yukon2015_directory, full.names = TRUE),
-  Kusko2017 = list.files(Kusko2017_directory, full.names = TRUE)
-)
-
-# Process all datasets for each directory with corresponding metadata
-results_list_Nush <- process_directory(all_files$Nush2014, Nush2014_metadata)
-results_list_Yukon <- process_directory(all_files$Yukon2015, Yukon2015_metadata)
-results_list_Kusko <- process_directory(all_files$Kusko2017, Kusko2017_metadata)
-
-# Combine results into a single tibble
-combined_results <- bind_rows(
-  list(
-    Nush2014 = results_list_Nush,
-    Yukon2015 = results_list_Yukon,
-    Kusko2017 = results_list_Kusko
-  ),
-  .id = "Dataset"
-)
-
-# Remove rows with all NA in the Iso column
-filtered_results <- combined_results %>%
-  filter(map_lgl(Iso, ~ !all(is.na(.))))
-
-
-
-
-
-
-
-
-
-
-
 # Process all datasets
-results_list <- map(all_files, process_directory)
+results_list <- map2(data_directories, metadata_files, ~ {
+  files <- list.files(.x, full.names = TRUE)
+  metadata <- read_csv(.y)
+  process_directory(files, metadata)
+})
 
 # Combine results into a single tibble
 combined_results <- bind_rows(results_list, .id = "Dataset")
@@ -83,31 +75,27 @@ combined_results <- bind_rows(results_list, .id = "Dataset")
 filtered_results <- combined_results %>%
   filter(map_lgl(Iso, ~ !all(is.na(.))))
 
-# Transpose the Iso values to make each individual a row
+# Create a measurement array from the Iso values
 measurement_array <- do.call(cbind, filtered_results$Iso)
-
-# Transpose the matrix to get individuals as rows
 measurement_array <- t(measurement_array)
 
 # Check for missing and infinite values
 if (anyNA(measurement_array) || any(is.infinite(measurement_array))) {
-  measurement_array[is.infinite(measurement_array)] <- NA # Replace infinite values with NA
+  measurement_array[is.infinite(measurement_array)] <- NA
   measurement_array <- apply(measurement_array, 2, function(x) {
     if (any(is.na(x))) {
-      x[is.na(x)] <- mean(x, na.rm = TRUE) # Replace NA with column mean
+      x[is.na(x)] <- mean(x, na.rm = TRUE)
     }
     return(x)
   })
 }
 
-# Extract the metadata (ID and Watershed)
+# Extract metadata
 ids <- filtered_results$Fish_id
 watersheds <- filtered_results$Watershed
 
 # Run PCA
 results <- prcomp(measurement_array, scale. = TRUE)
-
-# Get the PCA scores (first two principal components)
 pca_scores <- as.data.frame(results$x)
 
 # Combine PCA scores with metadata
@@ -119,7 +107,7 @@ pca_results <- tibble(
 )
 
 # Plot the PCA results
-ggplot(pca_results, aes(x = PC1, y = PC2, color = Watershed)) +
+pca_plot <- ggplot(pca_results, aes(x = PC1, y = PC2, color = Watershed)) +
   geom_point(size = 1, alpha = .5) +
   theme_classic() +
   labs(title = "PCA of Iso Values by Watershed",
@@ -128,50 +116,8 @@ ggplot(pca_results, aes(x = PC1, y = PC2, color = Watershed)) +
   theme(legend.title = element_blank())
 
 
-# outliers are those with a PCA score less than -5o or greater that 50 for either PCA 
-outliers <- pca_results %>%
-  filter(PC1 < -30 | PC1 > 30 | PC2 < -30 | PC2 > 30)
 
-# Remove the outliers from measurment array 
-outliers_index <- pca_results %>%
-  filter(PC1 < -30 | PC1 > 30 | PC2 < -30 | PC2 > 30) %>%
-  pull(Fish_id)
-
-# Remove the outliers from the measurement array
-filtered_measurement_array <- measurement_array[!(ids %in% outliers_index), ]
-
-# Run PCA again without outliers
-results_no_outliers <- prcomp(filtered_measurement_array, scale. = TRUE)
-
-# Get the PCA scores (first two principal components)
-pca_scores_no_outliers <- as.data.frame(results_no_outliers$x)
-
-# Combine PCA scores with metadata
-pca_results_no_outliers <- tibble(
-  PC1 = pca_scores_no_outliers$PC1,
-  PC2 = pca_scores_no_outliers$PC2,
-  Fish_id = ids[!(ids %in% outliers_index)],
-  Watershed = watersheds[!(ids %in% outliers_index)]
-)
-
-# Plot the PCA results without outliers
-pca_plot<-ggplot(pca_results_no_outliers, aes(x = PC1, y = PC2, color = Watershed)) +
-  geom_point(size = 1, alpha = .3) +
-  theme_classic() +
-  labs(title = "PCA of Iso Values by Watershed (No Outliers)",
-       x = "Principal Component 1",
-       y = "Principal Component 2") +
-  theme(legend.title = element_blank())
-
-pca_plot
-
-######################################################
-######### R Shiny app for interaction 
-library(shiny)
-library(tidyverse)
-
-# Load your PCA data and measurement array
-# Assume pca_results_no_outliers, ids, and measurement_array are preloaded
+plot(pca_plot)
 
 # Define UI
 ui <- fluidPage(
@@ -217,10 +163,10 @@ server <- function(input, output, session) {
   
   # Render PCA Plot with zoom
   output$pcaPlot <- renderPlot({
-    ggplot(pca_results_no_outliers, aes(x = PC1, y = PC2, color = Watershed)) +
+    ggplot(pca_results, aes(x = PC1, y = PC2, color = Watershed)) +
       geom_point(size = 2, alpha = 0.8) +
       theme_classic() +
-      labs(title = "PCA of Iso Values by Watershed (No Outliers)",
+      labs(title = "PCA of Iso Values by Watershed",
            x = "Principal Component 1",
            y = "Principal Component 2") +
       theme(legend.title = element_blank()) +
@@ -235,7 +181,7 @@ server <- function(input, output, session) {
   
   # Update selected Fish ID based on click
   observeEvent(input$pcaClick, {
-    nearPoint <- nearPoints(pca_results_no_outliers, input$pcaClick, threshold = 5, maxpoints = 1)
+    nearPoint <- nearPoints(pca_results, input$pcaClick, threshold = 5, maxpoints = 1)
     if (nrow(nearPoint) > 0) {
       selectedFish(nearPoint$Fish_id[1])
     }
@@ -248,13 +194,13 @@ server <- function(input, output, session) {
     # Find the index of the selected Fish ID
     fishIndex <- which(ids == selectedFish())
     
-    # Retrieve Iso data
+    # Retrieve Iso data for the selected Fish ID
     isoData <- tibble(
       Distance = seq_along(measurement_array[fishIndex, ]),
       Iso = measurement_array[fishIndex, ]
     )
     
-    # Calculate moving average
+    # Calculate moving average (smooth the Iso data)
     isoData <- isoData %>%
       mutate(MovingAvg = zoo::rollapply(Iso, width = 60, FUN = mean, fill = NA, align = "center"))
     
