@@ -1,6 +1,7 @@
 # Load necessary libraries
 library(tidyverse)
 library(here)
+library(shiny)
 
 # Define directories and their corresponding metadata files
 data_directories <- list(
@@ -45,18 +46,20 @@ process_directory <- function(files, metadata) {
         if (Fish_id_from_filename %in% metadata$Fish_id) {
           ind_data <- read_csv(.x) %>% select(Iso, Watershed, Fish_id)
           watershed <- ind_data$Watershed[1]
+          natal_iso<- ind_data$natal_iso[1]
           interpolated <- interpolate_data(ind_data)
           tibble(
             Fish_id = Fish_id_from_filename,
             Watershed = watershed,
             Iso = list(interpolated)
+            
           )
         } else {
-          tibble(Fish_id = NA, Watershed = NA, Iso = list(rep(NA, 1000)))
+          tibble(Fish_id = NA, Watershed = NA,  Iso = list(rep(NA, 1000)))
         }
       }, error = function(e) {
         message("Error processing file: ", .x, " - ", e$message)
-        tibble(Fish_id = NA, Watershed = NA, Iso = list(rep(NA, 1000)))
+        tibble(Fish_id = NA, Watershed = NA,  Iso = list(rep(NA, 1000)))
       })
     })
 }
@@ -94,21 +97,71 @@ if (anyNA(measurement_array) || any(is.infinite(measurement_array))) {
 ids <- filtered_results$Fish_id
 watersheds <- filtered_results$Watershed
 
+
+Nush2014_metadata<- read.csv("/Users/benjaminmakhlouf/Research_repos/Schindler_GitHub/Arctic_Yukon_Kuskokwim_Data/Data/Natal Origins/Cleaned/Nushugak_2014_Cleaned_Natal_Origins.csv")
+Yukon2015_metadata<- read.csv("/Users/benjaminmakhlouf/Research_repos/Schindler_GitHub/Arctic_Yukon_Kuskokwim_Data/Data/Final_QC_NatalOriginCPUE/ALL_DATA_2015_Yukon_Natal_Origins.csv")
+Yukon2016_metadata<- read.csv("/Users/benjaminmakhlouf/Research_repos/Schindler_GitHub/Arctic_Yukon_Kuskokwim_Data/Data/Final_QC_NatalOriginCPUE/ALL_DATA_2016_Yukon_Natal_Origins.csv")
+Kusko2017_metadata<- read.csv("/Users/benjaminmakhlouf/Research_repos/Schindler_GitHub/Arctic_Yukon_Kuskokwim_Data/Data/Final_QC_NatalOriginCPUE/ALL_DATA_2017_Kusko_Natal_Origins.csv")
+Kusko2019_metadata<- read.csv("/Users/benjaminmakhlouf/Research_repos/Schindler_GitHub/Arctic_Yukon_Kuskokwim_Data/Data/Final_QC_NatalOriginCPUE/ALL_DATA_2019_Kusko_Natal_Origins.csv")
+
+# select the natal origin and fish ID from the metadata 
+Nush2014_metadata<- Nush2014_metadata %>% select(Fish_id, natal_iso)
+Yukon2015_metadata<- Yukon2015_metadata %>% select(Fish_id, natal_iso)
+Yukon2016_metadata<- Yukon2016_metadata %>% select(Fish_id, natal_iso)
+Kusko2017_metadata<- Kusko2017_metadata %>% select(Fish_id, natal_iso)
+Kusko2019_metadata<- Kusko2019_metadata %>% select(Fish_id, natal_iso)
+
+# combine the metadata
+metadata<- rbind(Nush2014_metadata, Yukon2015_metadata, Yukon2016_metadata, Kusko2017_metadata, Kusko2019_metadata)
+
+# match the fish_id to the ids
+metadata<- metadata %>% filter(Fish_id %in% ids)
+
+#Put the iso values in order of their match between Fish_id in metadata and ids
+metadata<- metadata[match(ids, metadata$Fish_id),]
+
+#etract the ordered natal iso values
+natal_iso<- metadata$natal_iso
+
+# Find the indices of natal iso values above .709 AND below .705
+natal_filtering<- which(natal_iso > .4 | natal_iso < .700)
+
+
+
+#Remove these indices from all data,unless theres an NA then just change the name and keep the data 
+
+if (length(natal_filtering) == 0)  {
+  measurement_array_filtered<- measurement_array
+  ids_filtered<- ids
+  watersheds_filtered<- watersheds
+  natal_iso_filtered<- natal_iso
+  } else {
+measurement_array_filtered<- measurement_array[-natal_filtering,]
+ids_filtered<- ids[-natal_filtering]
+watersheds_filtered<- watersheds[-natal_filtering]
+natal_iso_filtered<- natal_iso[-natal_filtering]
+  }
+
+
 # Run PCA
-results <- prcomp(measurement_array, scale. = TRUE)
+results <- prcomp(measurement_array_filtered, scale. = TRUE)
 pca_scores <- as.data.frame(results$x)
+
 
 # Combine PCA scores with metadata
 pca_results <- tibble(
   PC1 = pca_scores$PC1,
   PC2 = pca_scores$PC2,
-  Fish_id = ids,
-  Watershed = watersheds
+  Fish_id = ids_filtered,
+  Watershed = watersheds_filtered, 
+  Natal_iso = natal_iso_filtered
 )
+
+
 
 # Plot the PCA results
 pca_plot <- ggplot(pca_results, aes(x = PC1, y = PC2, color = Watershed)) +
-  geom_point(size = 1, alpha = .5) +
+  geom_point(size = 2, alpha = .9) +
   theme_classic() +
   labs(title = "PCA of Iso Values by Watershed",
        x = "Principal Component 1",
@@ -116,8 +169,25 @@ pca_plot <- ggplot(pca_results, aes(x = PC1, y = PC2, color = Watershed)) +
   theme(legend.title = element_blank())
 
 
-
 plot(pca_plot)
+
+########## PCA PLOT WITH NATAL ISO 
+pca_plot_natal_iso <- ggplot(pca_results, aes(x = PC1, y = PC2, color = Natal_iso)) +
+  geom_point(size = 2, alpha = .9) +
+  theme_classic() +
+  labs(title = "PCA of Iso Values by Natal Iso",
+       x = "Principal Component 1",
+       y = "Principal Component 2") +
+  scale_color_viridis_c(option = "C") +  # Viridis color palette with more variation
+  theme(legend.title = element_blank())
+
+# Plot the updated PCA plot
+plot(pca_plot_natal_iso)
+
+# Put both of these plots together in one figure using cowplot 
+cowplot::plot_grid(pca_plot, pca_plot_natal_iso, labels = c("A", "B"))
+
+################# R Shiny exploration plot 
 
 # Define UI
 ui <- fluidPage(
@@ -217,3 +287,5 @@ server <- function(input, output, session) {
 
 # Run the App
 shinyApp(ui, server)
+
+
