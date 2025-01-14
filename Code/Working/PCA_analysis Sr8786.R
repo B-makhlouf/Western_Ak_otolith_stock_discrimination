@@ -3,6 +3,8 @@ library(tidyverse)
 library(here)
 library(shiny)
 
+if (T){
+  
 # Define directories and their corresponding metadata files
 data_directories <- list(
   Nush2014 = here("/Users/benjaminmakhlouf/Research_repos/Schindler_GitHub/Arctic_Yukon_Kuskokwim_Data/Data/Otolith Data/LA Data/Trimmed/2014 Nush"),
@@ -123,44 +125,56 @@ metadata<- metadata[match(ids, metadata$Fish_id),]
 #etract the ordered natal iso values
 natal_iso<- metadata$natal_iso
 
-# Find the indices of natal iso values above .709 AND below .705
-natal_filtering<- which(natal_iso > .4 | natal_iso < .700)
+}
 
-
-
-#Remove these indices from all data,unless theres an NA then just change the name and keep the data 
-
-if (length(natal_filtering) == 0)  {
-  measurement_array_filtered<- measurement_array
-  ids_filtered<- ids
-  watersheds_filtered<- watersheds
-  natal_iso_filtered<- natal_iso
-  } else {
-measurement_array_filtered<- measurement_array[-natal_filtering,]
-ids_filtered<- ids[-natal_filtering]
-watersheds_filtered<- watersheds[-natal_filtering]
-natal_iso_filtered<- natal_iso[-natal_filtering]
-  }
-
+##################### RUN THE PCA PLOT 
 
 # Run PCA
 results <- prcomp(measurement_array_filtered, scale. = TRUE)
 pca_scores <- as.data.frame(results$x)
 
-
 # Combine PCA scores with metadata
 pca_results <- tibble(
   PC1 = pca_scores$PC1,
   PC2 = pca_scores$PC2,
+  PC3 = pca_scores$PC3,
   Fish_id = ids_filtered,
   Watershed = watersheds_filtered, 
   Natal_iso = natal_iso_filtered
 )
 
+loadings <- as.data.frame(results$rotation)
+loadings$Feature <- rownames(loadings)
+
+# Identify top 10 features driving PC1
+top_features_PC1 <- loadings %>%
+  arrange(desc(abs(PC1))) %>%
+  slice(1:10) %>%
+  select(Feature, PC1)
+
+# Identify top 10 features driving PC2
+top_features_PC2 <- loadings %>%
+  arrange(desc(abs(PC2))) %>%
+  slice(1:10) %>%
+  select(Feature, PC2)
+
+# Identify top 10 features driving PC3
+top_features_PC3 <- loadings %>%
+  arrange(desc(abs(PC3))) %>%
+  slice(1:10) %>%
+  select(Feature, PC3)
+
+# Print the top features for each PC
+list(
+  Top_10_PC1 = top_features_PC1,
+  Top_10_PC2 = top_features_PC2,
+  Top_10_PC3 = top_features_PC3
+)
+
 
 
 # Plot the PCA results
-pca_plot <- ggplot(pca_results, aes(x = PC1, y = PC2, color = Watershed)) +
+pca_plot <- ggplot(pca_results, aes(x = PC2, y = PC3, color = Watershed)) +
   geom_point(size = 2, alpha = .9) +
   theme_classic() +
   labs(title = "PCA of Iso Values by Watershed",
@@ -172,7 +186,7 @@ pca_plot <- ggplot(pca_results, aes(x = PC1, y = PC2, color = Watershed)) +
 plot(pca_plot)
 
 ########## PCA PLOT WITH NATAL ISO 
-pca_plot_natal_iso <- ggplot(pca_results, aes(x = PC1, y = PC2, color = Natal_iso)) +
+pca_plot_natal_iso <- ggplot(pca_results, aes(x = PC2, y = PC3, color = Natal_iso)) +
   geom_point(size = 2, alpha = .9) +
   theme_classic() +
   labs(title = "PCA of Iso Values by Natal Iso",
@@ -186,6 +200,7 @@ plot(pca_plot_natal_iso)
 
 # Put both of these plots together in one figure using cowplot 
 cowplot::plot_grid(pca_plot, pca_plot_natal_iso, labels = c("A", "B"))
+
 
 ################# R Shiny exploration plot 
 
@@ -233,7 +248,7 @@ server <- function(input, output, session) {
   
   # Render PCA Plot with zoom
   output$pcaPlot <- renderPlot({
-    ggplot(pca_results, aes(x = PC1, y = PC2, color = Watershed)) +
+    ggplot(pca_results, aes(x = PC2, y = PC3, color = Watershed)) +
       geom_point(size = 2, alpha = 0.8) +
       theme_classic() +
       labs(title = "PCA of Iso Values by Watershed",
@@ -287,5 +302,7 @@ server <- function(input, output, session) {
 
 # Run the App
 shinyApp(ui, server)
+
+
 
 
