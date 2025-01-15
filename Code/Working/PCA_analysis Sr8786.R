@@ -129,26 +129,28 @@ natal_iso<- metadata$natal_iso
 
 ##################### RUN THE PCA PLOT 
 
-# Run PCA
-results <- prcomp(measurement_array, scale. = TRUE)
-pca_scores <- as.data.frame(results$x)
-
-# Calculate the explained variance for each component 
-explained_variance <- results$sdev^2  # Eigenvalues (variance of each PC)
-total_variance <- sum(explained_variance)
-proportion_variance <- explained_variance / total_variance
-cumulative_variance <- cumsum(proportion_variance)
-
-# Summarize the relative contrbution of each of the top components 
-if (T){
-variance_summary <- tibble(
-  Principal_Component = paste0("PC", seq_along(proportion_variance)),
-  Variance_Explained = proportion_variance,
-  Cumulative_Variance = cumulative_variance
+# Combine all of the metadata into one dataframe
+metadata <- tibble(
+  Fish_id = ids,
+  Watershed = watersheds,
+  Natal_iso = natal_iso
 )
-print(variance_summary)
-}
 
+# Define a range of natal origins 
+natal_origin_filtering<- c(.708,.709)
+
+#Find the indices of the natal origins that are within the range
+natal_origin_indices<- which(metadata$Natal_iso >= natal_origin_filtering[1] & metadata$Natal_iso <= natal_origin_filtering[2])
+
+# Filter the metadata to only include the natal origins within the range
+metadata_filtered<- metadata[natal_origin_indices,]
+
+# Filter the measurement array to only include the natal origins within the range
+measurement_array_filtered<- measurement_array[natal_origin_indices,]
+
+# Run PCA
+results <- prcomp(measurement_array_filtered, scale. = TRUE)
+pca_scores <- as.data.frame(results$x)
 
 # Combine PCA scores with metadata
 pca_results <- tibble(
@@ -156,12 +158,57 @@ pca_results <- tibble(
   PC2 = pca_scores$PC2,
   PC3 = pca_scores$PC3,
   PC4 = pca_scores$PC4,
-  Fish_id = ids,
-  Watershed = watersheds, 
-  Natal_iso = natal_iso
+  Fish_id = metadata_filtered$Fish_id,
+  Watershed = metadata_filtered$Watershed, 
+  Natal_iso = metadata_filtered$Natal_iso
 )
 
 
+############################
+# Define which components to visualize
+pca_x <- "PC1"
+pca_y <- "PC2"  
+
+# Update ggplot figures
+pca_plot <- ggplot(pca_results, aes_string(x = pca_x, y = pca_y, color = "Watershed")) +
+  geom_point(size = 2, alpha = .9) +
+  theme_classic() +
+  labs(title = "PCA of Iso Values by Watershed",
+       x = pca_x,
+       y = pca_y) +
+  theme(legend.title = element_blank())
+
+pca_plot_natal_iso <- ggplot(pca_results, aes_string(x = pca_x, y = pca_y, color = "Natal_iso")) +
+  geom_point(size = 2, alpha = .9) +
+  theme_classic() +
+  labs(title = "PCA of Iso Values by Natal Iso",
+       x = pca_x,
+       y = pca_y) +
+  scale_color_viridis_c(option = "C") +
+  theme(legend.title = element_blank())
+
+cowplot::plot_grid(pca_plot, pca_plot_natal_iso, labels = c("A", "B"))
+
+
+##############################
+# How much does each component contribute to the variance? 
+
+if (T){
+# Calculate the explained variance for each component 
+explained_variance <- results$sdev^2  # Eigenvalues (variance of each PC)
+total_variance <- sum(explained_variance)
+proportion_variance <- explained_variance / total_variance
+cumulative_variance <- cumsum(proportion_variance)
+
+# Summarize the relative contrbution of each of the top components 
+
+variance_summary <- tibble(
+  Principal_Component = paste0("PC", seq_along(proportion_variance)),
+  Variance_Explained = proportion_variance,
+  Cumulative_Variance = cumulative_variance
+)
+print(variance_summary)
+}
 ########## determine the features loading on each of the PCAs 
 
 if (T){
@@ -192,51 +239,7 @@ list(
   Top_10_PC2 = top_features_PC2,
   Top_10_PC3 = top_features_PC3
 )
-
 } 
-
-############################
-# Define which components to visualize
-pca_x <- "PC3"
-pca_y <- "PC4"  
-
-# Update ggplot figures
-pca_plot <- ggplot(pca_results, aes_string(x = pca_x, y = pca_y, color = "Watershed")) +
-  geom_point(size = 2, alpha = .9) +
-  theme_classic() +
-  labs(title = "PCA of Iso Values by Watershed",
-       x = pca_x,
-       y = pca_y) +
-  theme(legend.title = element_blank())
-
-pca_plot_natal_iso <- ggplot(pca_results, aes_string(x = pca_x, y = pca_y, color = "Natal_iso")) +
-  geom_point(size = 2, alpha = .9) +
-  theme_classic() +
-  labs(title = "PCA of Iso Values by Natal Iso",
-       x = pca_x,
-       y = pca_y) +
-  scale_color_viridis_c(option = "C") +
-  theme(legend.title = element_blank())
-
-cowplot::plot_grid(pca_plot, pca_plot_natal_iso, labels = c("A", "B"))
-
-
-
-########## PCA PLOT WITH NATAL ISO 
-pca_plot_natal_iso <- ggplot(pca_results, aes(x = PC2, y = PC3, color = Natal_iso)) +
-  geom_point(size = 2, alpha = .9) +
-  theme_classic() +
-  labs(title = "PCA of Iso Values by Natal Iso",
-       x = "Principal Component 1",
-       y = "Principal Component 2") +
-  scale_color_viridis_c(option = "C") +  # Viridis color palette with more variation
-  theme(legend.title = element_blank())
-
-# Plot the updated PCA plot
-plot(pca_plot_natal_iso)
-
-# Put both of these plots together in one figure using cowplot 
-cowplot::plot_grid(pca_plot, pca_plot_natal_iso, labels = c("A", "B"))
 
 
 ################# R Shiny exploration plot 
