@@ -130,19 +130,41 @@ natal_iso<- metadata$natal_iso
 ##################### RUN THE PCA PLOT 
 
 # Run PCA
-results <- prcomp(measurement_array_filtered, scale. = TRUE)
+results <- prcomp(measurement_array, scale. = TRUE)
 pca_scores <- as.data.frame(results$x)
+
+# Calculate the explained variance for each component 
+explained_variance <- results$sdev^2  # Eigenvalues (variance of each PC)
+total_variance <- sum(explained_variance)
+proportion_variance <- explained_variance / total_variance
+cumulative_variance <- cumsum(proportion_variance)
+
+# Summarize the relative contrbution of each of the top components 
+if (T){
+variance_summary <- tibble(
+  Principal_Component = paste0("PC", seq_along(proportion_variance)),
+  Variance_Explained = proportion_variance,
+  Cumulative_Variance = cumulative_variance
+)
+print(variance_summary)
+}
+
 
 # Combine PCA scores with metadata
 pca_results <- tibble(
   PC1 = pca_scores$PC1,
   PC2 = pca_scores$PC2,
   PC3 = pca_scores$PC3,
-  Fish_id = ids_filtered,
-  Watershed = watersheds_filtered, 
-  Natal_iso = natal_iso_filtered
+  PC4 = pca_scores$PC4,
+  Fish_id = ids,
+  Watershed = watersheds, 
+  Natal_iso = natal_iso
 )
 
+
+########## determine the features loading on each of the PCAs 
+
+if (T){
 loadings <- as.data.frame(results$rotation)
 loadings$Feature <- rownames(loadings)
 
@@ -171,19 +193,34 @@ list(
   Top_10_PC3 = top_features_PC3
 )
 
+} 
 
+############################
+# Define which components to visualize
+pca_x <- "PC3"
+pca_y <- "PC4"  
 
-# Plot the PCA results
-pca_plot <- ggplot(pca_results, aes(x = PC2, y = PC3, color = Watershed)) +
+# Update ggplot figures
+pca_plot <- ggplot(pca_results, aes_string(x = pca_x, y = pca_y, color = "Watershed")) +
   geom_point(size = 2, alpha = .9) +
   theme_classic() +
   labs(title = "PCA of Iso Values by Watershed",
-       x = "Principal Component 1",
-       y = "Principal Component 2") +
+       x = pca_x,
+       y = pca_y) +
   theme(legend.title = element_blank())
 
+pca_plot_natal_iso <- ggplot(pca_results, aes_string(x = pca_x, y = pca_y, color = "Natal_iso")) +
+  geom_point(size = 2, alpha = .9) +
+  theme_classic() +
+  labs(title = "PCA of Iso Values by Natal Iso",
+       x = pca_x,
+       y = pca_y) +
+  scale_color_viridis_c(option = "C") +
+  theme(legend.title = element_blank())
 
-plot(pca_plot)
+cowplot::plot_grid(pca_plot, pca_plot_natal_iso, labels = c("A", "B"))
+
+
 
 ########## PCA PLOT WITH NATAL ISO 
 pca_plot_natal_iso <- ggplot(pca_results, aes(x = PC2, y = PC3, color = Natal_iso)) +
@@ -203,14 +240,14 @@ cowplot::plot_grid(pca_plot, pca_plot_natal_iso, labels = c("A", "B"))
 
 
 ################# R Shiny exploration plot 
-
-# Define UI
 ui <- fluidPage(
   titlePanel("PCA Analysis Viewer"),
   sidebarLayout(
     sidebarPanel(
       helpText("Click on a point in the PCA plot to view Iso vs. Distance for that Fish ID."),
       helpText("Drag to zoom in on the PCA plot."),
+      selectInput("xComp", "X Component:", choices = names(pca_results), selected = "PC2"),
+      selectInput("yComp", "Y Component:", choices = names(pca_results), selected = "PC3"),
       actionButton("resetZoom", "Reset Zoom")  # Add Reset Zoom button
     ),
     mainPanel(
@@ -246,14 +283,14 @@ server <- function(input, output, session) {
     zoomRegion$y <- NULL
   })
   
-  # Render PCA Plot with zoom
+  # Render PCA Plot with dynamic components and zoom
   output$pcaPlot <- renderPlot({
-    ggplot(pca_results, aes(x = PC2, y = PC3, color = Watershed)) +
+    ggplot(pca_results, aes_string(x = input$xComp, y = input$yComp, color = "Watershed")) +
       geom_point(size = 2, alpha = 0.8) +
       theme_classic() +
       labs(title = "PCA of Iso Values by Watershed",
-           x = "Principal Component 1",
-           y = "Principal Component 2") +
+           x = input$xComp,
+           y = input$yComp) +
       theme(legend.title = element_blank()) +
       coord_cartesian(
         xlim = zoomRegion$x,
@@ -302,7 +339,3 @@ server <- function(input, output, session) {
 
 # Run the App
 shinyApp(ui, server)
-
-
-
-
