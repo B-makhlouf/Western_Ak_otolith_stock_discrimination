@@ -21,7 +21,7 @@ if (T){
     approx(
       x = seq_along(data$Iso),
       y = data$Iso,
-      xout = seq(1, nrow(data), length.out = 500),
+      xout = seq(1, nrow(data), length.out = 1000),
       method = "linear",
       rule = 2
     )$y
@@ -115,7 +115,7 @@ metadata <- tibble(
 )
 
 # Define a range of natal origins 
-natal_origin_filtering<- c(.700,.710)
+natal_origin_filtering<- c(.700,.720)
 
 #Find the indices of the natal origins that are within the range
 natal_origin_indices<- which(metadata$Natal_iso >= natal_origin_filtering[1] & metadata$Natal_iso <= natal_origin_filtering[2])
@@ -150,7 +150,7 @@ pca_y <- "PC2"
 
 # Update ggplot figures
 pca_plot <- ggplot(pca_results, aes_string(x = pca_x, y = pca_y, color = "Watershed")) +
-  geom_point(size = 2, alpha = .9) +
+  geom_point(size = 2, alpha = .4) +
   theme_classic() +
   labs(title = "PCA of Iso Values by Watershed",
        x = pca_x,
@@ -326,6 +326,7 @@ server <- function(input, output, session) {
     ggplot(isoData, aes(x = Distance, y = Iso)) +
       geom_point(alpha = 0.5) +
       geom_line(aes(y = MovingAvg), color = "blue", size = 1) +
+      geom_hline(yintercept = .7092, color = "gold")+
       theme_classic() +
       labs(title = paste("Iso vs. Distance for Fish ID:", selectedFish()),
            x = "Distance",

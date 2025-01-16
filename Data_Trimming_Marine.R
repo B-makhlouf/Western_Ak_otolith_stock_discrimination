@@ -23,6 +23,11 @@ output_dir <- here("Data/Intermediate/Trimmed no core or marine/Kusko/Diagnostic
 la_data_dir <- here("Data/Intermediate/Trimmed no core or marine/Kusko/LA Data")
 
 
+#2014 Nush
+data_dir <- here("/Users/benjaminmakhlouf/Research_repos/Western_Ak_otolith_stock_discrimination/Data/Intermediate/Trimmed no core/Nush/LA Data") 
+metadata_path <- here("/Users/benjaminmakhlouf/Research_repos/Western_Ak_otolith_stock_discrimination/Data/Processed/Extracted Natal Origins/2014 Nushagak_Cleaned_Natal_Origins.csv")
+output_dir <- here("Data/Intermediate/Trimmed no core or marine/Nush/Diagnostic Plots")
+la_data_dir <- here("Data/Intermediate/Trimmed no core or marine/Nush/LA Data")
 
 
 # Load metadata
