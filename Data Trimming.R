@@ -16,29 +16,25 @@ la_data_dir <- here("Data/Intermediate/Trimmed no core/Yukon/LA Data")
 
 # 2017 Kuskokwim 
 data_dir <- here("Data/Intermediate/Cleaned but not trimmed/2017 Kusko")
-
-
-
-
-
-
-
+metadata_path <- here("Data/Processed/Extracted Natal Origins/ALL_DATA_2017_Kusko_Natal_Origins.csv")
+output_dir <- here("Data/Intermediate/Trimmed no core/Kusko/Diagnostic Plots")
+la_data_dir <- here("Data/Intermediate/Trimmed no core/Kusko/LA Data")
 
 # Load metadata
-yk_2015_metadata <- read.csv(metadata_path)
+metadata <- read.csv(metadata_path)
 
 # Load all individual files
-Yk_2015 <- list.files(data_dir, full.names = TRUE)
+files <- list.files(data_dir, full.names = TRUE)
 
 # Process each file
-for (file_path in Yk_2015) {
+for (file_path in files) {
   # Load individual data
   individual_data <- read.csv(file_path)
   fish_id <- individual_data$Fish_id[1]
   Watershed <- individual_data$Watershed[1]
   
   # Match metadata
-  fish_metadata <- yk_2015_metadata %>% filter(Fish_id == fish_id)
+  fish_metadata <- metadata %>% filter(Fish_id == fish_id)
   
   if (nrow(fish_metadata) == 0) {
     warning(paste("No metadata found for Fish ID:", fish_id))
