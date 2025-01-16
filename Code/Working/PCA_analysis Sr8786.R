@@ -5,127 +5,102 @@ library(shiny)
 
 if (T){
   
-# Define directories and their corresponding metadata files
-data_directories <- list(
-  Nush2014 = here("/Users/benjaminmakhlouf/Research_repos/Schindler_GitHub/Arctic_Yukon_Kuskokwim_Data/Data/Otolith Data/LA Data/Trimmed/2014 Nush"),
-  Yukon2015 = here("/Users/benjaminmakhlouf/Research_repos/Schindler_GitHub/Arctic_Yukon_Kuskokwim_Data/Data/Otolith Data/LA Data/Trimmed/2015 Yukon"),
-  Yukon2016 = here("/Users/benjaminmakhlouf/Research_repos/Schindler_GitHub/Arctic_Yukon_Kuskokwim_Data/Data/Otolith Data/LA Data/Trimmed/2016 Yukon"),
-  Kusko2017 = here("/Users/benjaminmakhlouf/Research_repos/Schindler_GitHub/Arctic_Yukon_Kuskokwim_Data/Data/Otolith Data/LA Data/Trimmed/2017 Kusko"),
-  Kusko2019 = here("/Users/benjaminmakhlouf/Research_repos/Schindler_GitHub/Arctic_Yukon_Kuskokwim_Data/Data/Otolith Data/LA Data/Trimmed/2019 Kusko")
-)
-
-metadata_files <- list(
-  Nush2014 = "/Users/benjaminmakhlouf/Research_repos/Schindler_GitHub/Arctic_Yukon_Kuskokwim_Data/Data/Natal Origins/Cleaned/Nushugak_2014_Cleaned_Natal_Origins.csv",
-  Yukon2015 = "/Users/benjaminmakhlouf/Research_repos/Schindler_GitHub/Arctic_Yukon_Kuskokwim_Data/Data/Final_QC_NatalOriginCPUE/ALL_DATA_2015_Yukon_Natal_Origins.csv",
-  Yukon2016 = "/Users/benjaminmakhlouf/Research_repos/Schindler_GitHub/Arctic_Yukon_Kuskokwim_Data/Data/Final_QC_NatalOriginCPUE/ALL_DATA_2016_Yukon_Natal_Origins.csv",
-  Kusko2017 = "/Users/benjaminmakhlouf/Research_repos/Schindler_GitHub/Arctic_Yukon_Kuskokwim_Data/Data/Final_QC_NatalOriginCPUE/ALL_DATA_2017_Kusko_Natal_Origins.csv",
-  Kusko2019 = "/Users/benjaminmakhlouf/Research_repos/Schindler_GitHub/Arctic_Yukon_Kuskokwim_Data/Data/Final_QC_NatalOriginCPUE/ALL_DATA_2019_Kusko_Natal_Origins.csv"
-)
-
-# Function to interpolate Iso values
-interpolate_data <- function(data) {
-  if (nrow(data) < 2 || all(is.na(data$Iso))) {
-    return(rep(NA, 1000))
+  # Define directories and their corresponding metadata files
+  data_directories <- list(
+    Yukon2015 = here("Data/Intermediate/Trimmed no core/Yukon/LA Data"),
+    Kusko2017 = here("Data/Intermediate/Trimmed no core/Kusko/LA Data"), 
+    Nush2014 = here("Data/Intermediate/Trimmed no core/Nush/LA Data")
+  )
+  
+  # Function to interpolate Iso values
+  interpolate_data <- function(data) {
+    if (nrow(data) < 2 || all(is.na(data$Iso))) {
+      return(rep(NA, 1000))
+    }
+    
+    approx(
+      x = seq_along(data$Iso),
+      y = data$Iso,
+      xout = seq(1, nrow(data), length.out = 1000),
+      method = "linear",
+      rule = 2
+    )$y
   }
   
-  approx(
-    x = seq_along(data$Iso),
-    y = data$Iso,
-    xout = seq(1, nrow(data), length.out = 1000),
-    method = "linear",
-    rule = 2
-  )$y
-}
-
-# Function to process all files in a directory and filter by Fish_id
-process_directory <- function(files, metadata) {
-  files %>%
-    map_df(~ {
-      tryCatch({
-        file_name <- basename(.x)
-        Fish_id_from_filename <- tools::file_path_sans_ext(file_name)
-        
-        if (Fish_id_from_filename %in% metadata$Fish_id) {
-          ind_data <- read_csv(.x) %>% select(Iso, Watershed, Fish_id)
+  # Function to process all files in a directory and filter by Fish_id
+  process_directory <- function(files, metadata) {
+    files %>%
+      map_df(~ {
+        tryCatch({
+          file_name <- basename(.x)
+          
+          # Read the data and select relevant columns
+          ind_data <- read_csv(.x) %>% select(Iso, Sr88, Watershed, Fish_id, natal_iso)
           watershed <- ind_data$Watershed[1]
-          natal_iso<- ind_data$natal_iso[1]
+          natal_iso <- ind_data$natal_iso[1]  # Assuming this column exists in your data
+          fish_id <- ind_data$Fish_id[1]
+          
+          # Debug message to check the assigned natal_iso
+          message("Assigned natal_iso: ", natal_iso)
+          
+          # Interpolate Iso values
           interpolated <- interpolate_data(ind_data)
+          
+          # Return the result as a tibble
           tibble(
-            Fish_id = Fish_id_from_filename,
+            Fish_id = fish_id,
             Watershed = watershed,
+            Natal_Iso = natal_iso,  # Include Natal_Iso in the tibble
             Iso = list(interpolated)
-            
           )
-        } else {
-          tibble(Fish_id = NA, Watershed = NA,  Iso = list(rep(NA, 1000)))
-        }
-      }, error = function(e) {
-        message("Error processing file: ", .x, " - ", e$message)
-        tibble(Fish_id = NA, Watershed = NA,  Iso = list(rep(NA, 1000)))
+        }, error = function(e) {
+          message("Error processing file: ", .x, " - ", e$message)
+          tibble(Fish_id = NA, Watershed = NA, Natal_Iso = NA, Iso = list(rep(NA, 1000)))
+        })
       })
-    })
-}
-
-# Process all datasets
-results_list <- map2(data_directories, metadata_files, ~ {
-  files <- list.files(.x, full.names = TRUE)
-  metadata <- read_csv(.y)
-  process_directory(files, metadata)
-})
-
-# Combine results into a single tibble
-combined_results <- bind_rows(results_list, .id = "Dataset")
-
-# Remove rows with all NA in the Iso column
-filtered_results <- combined_results %>%
-  filter(map_lgl(Iso, ~ !all(is.na(.))))
-
-# Create a measurement array from the Iso values
-measurement_array <- do.call(cbind, filtered_results$Iso)
-measurement_array <- t(measurement_array)
-
-# Check for missing and infinite values
-if (anyNA(measurement_array) || any(is.infinite(measurement_array))) {
-  measurement_array[is.infinite(measurement_array)] <- NA
-  measurement_array <- apply(measurement_array, 2, function(x) {
-    if (any(is.na(x))) {
-      x[is.na(x)] <- mean(x, na.rm = TRUE)
-    }
-    return(x)
+  }
+  
+  # Process all datasets
+  results_list <- map(data_directories, ~ {
+    files <- list.files(.x, full.names = TRUE)
+    process_directory(files)
   })
+  
+  # Combine results into a single tibble
+  combined_results <- bind_rows(results_list, .id = "Dataset")
+  
+  # Debug message to check if Natal_Iso is in the final combined_results
+  print(colnames(combined_results))
+  print(head(combined_results))
+  
+  # Remove rows with all NA in the Iso column
+  filtered_results <- combined_results %>%
+    filter(map_lgl(Iso, ~ !all(is.na(.))))
+  
+  # Create a measurement array from the Iso values
+  measurement_array <- do.call(cbind, filtered_results$Iso)
+  measurement_array <- t(measurement_array)
+  
+  # Check for missing and infinite values
+  if (anyNA(measurement_array) || any(is.infinite(measurement_array))) {
+    measurement_array[is.infinite(measurement_array)] <- NA
+    measurement_array <- apply(measurement_array, 2, function(x) {
+      if (any(is.na(x))) {
+        x[is.na(x)] <- mean(x, na.rm = TRUE)
+      }
+      return(x)
+    })
+  }
 }
+
+
 
 # Extract metadata
 ids <- filtered_results$Fish_id
 watersheds <- filtered_results$Watershed
+natal_origins<- filtered_results$Natal_Iso
 
 
-Nush2014_metadata<- read.csv("/Users/benjaminmakhlouf/Research_repos/Schindler_GitHub/Arctic_Yukon_Kuskokwim_Data/Data/Natal Origins/Cleaned/Nushugak_2014_Cleaned_Natal_Origins.csv")
-Yukon2015_metadata<- read.csv("/Users/benjaminmakhlouf/Research_repos/Schindler_GitHub/Arctic_Yukon_Kuskokwim_Data/Data/Final_QC_NatalOriginCPUE/ALL_DATA_2015_Yukon_Natal_Origins.csv")
-Yukon2016_metadata<- read.csv("/Users/benjaminmakhlouf/Research_repos/Schindler_GitHub/Arctic_Yukon_Kuskokwim_Data/Data/Final_QC_NatalOriginCPUE/ALL_DATA_2016_Yukon_Natal_Origins.csv")
-Kusko2017_metadata<- read.csv("/Users/benjaminmakhlouf/Research_repos/Schindler_GitHub/Arctic_Yukon_Kuskokwim_Data/Data/Final_QC_NatalOriginCPUE/ALL_DATA_2017_Kusko_Natal_Origins.csv")
-Kusko2019_metadata<- read.csv("/Users/benjaminmakhlouf/Research_repos/Schindler_GitHub/Arctic_Yukon_Kuskokwim_Data/Data/Final_QC_NatalOriginCPUE/ALL_DATA_2019_Kusko_Natal_Origins.csv")
-
-# select the natal origin and fish ID from the metadata 
-Nush2014_metadata<- Nush2014_metadata %>% select(Fish_id, natal_iso)
-Yukon2015_metadata<- Yukon2015_metadata %>% select(Fish_id, natal_iso)
-Yukon2016_metadata<- Yukon2016_metadata %>% select(Fish_id, natal_iso)
-Kusko2017_metadata<- Kusko2017_metadata %>% select(Fish_id, natal_iso)
-Kusko2019_metadata<- Kusko2019_metadata %>% select(Fish_id, natal_iso)
-
-# combine the metadata
-metadata<- rbind(Nush2014_metadata, Yukon2015_metadata, Yukon2016_metadata, Kusko2017_metadata, Kusko2019_metadata)
-
-# match the fish_id to the ids
-metadata<- metadata %>% filter(Fish_id %in% ids)
-
-#Put the iso values in order of their match between Fish_id in metadata and ids
-metadata<- metadata[match(ids, metadata$Fish_id),]
-
-#etract the ordered natal iso values
-natal_iso<- metadata$natal_iso
-
-}
 #############################################################################
 #############################################################################
 #################### PCA Exploration ########################################
@@ -135,12 +110,12 @@ natal_iso<- metadata$natal_iso
 # Combine all of the metadata into one dataframe
 metadata <- tibble(
   Fish_id = ids,
-  Watershed = watersheds,
-  Natal_iso = natal_iso
+  Natal_iso = natal_origins,
+  Watershed = watersheds
 )
 
 # Define a range of natal origins 
-natal_origin_filtering<- c(.703,.713)
+natal_origin_filtering<- c(.703,.715)
 
 #Find the indices of the natal origins that are within the range
 natal_origin_indices<- which(metadata$Natal_iso >= natal_origin_filtering[1] & metadata$Natal_iso <= natal_origin_filtering[2])
@@ -150,6 +125,7 @@ metadata_filtered<- metadata[natal_origin_indices,]
 
 # Filter the measurement array to only include the natal origins within the range
 measurement_array_filtered<- measurement_array[natal_origin_indices,]
+
 
 # Run PCA
 results <- prcomp(measurement_array_filtered, scale. = TRUE)
@@ -169,8 +145,8 @@ pca_results <- tibble(
 
 ############################
 # Define which components to visualize
-pca_x <- "PC2"
-pca_y <- "PC3"  
+pca_x <- "PC1"
+pca_y <- "PC2"  
 
 # Update ggplot figures
 pca_plot <- ggplot(pca_results, aes_string(x = pca_x, y = pca_y, color = "Watershed")) +
