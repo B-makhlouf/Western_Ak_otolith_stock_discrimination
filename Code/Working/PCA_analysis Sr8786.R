@@ -126,8 +126,11 @@ metadata<- metadata[match(ids, metadata$Fish_id),]
 natal_iso<- metadata$natal_iso
 
 }
+#############################################################################
+#############################################################################
+#################### PCA Exploration ########################################
+#############################################################################
 
-##################### RUN THE PCA PLOT 
 
 # Combine all of the metadata into one dataframe
 metadata <- tibble(
@@ -137,7 +140,7 @@ metadata <- tibble(
 )
 
 # Define a range of natal origins 
-natal_origin_filtering<- c(.708,.709)
+natal_origin_filtering<- c(.703,.713)
 
 #Find the indices of the natal origins that are within the range
 natal_origin_indices<- which(metadata$Natal_iso >= natal_origin_filtering[1] & metadata$Natal_iso <= natal_origin_filtering[2])
@@ -166,8 +169,8 @@ pca_results <- tibble(
 
 ############################
 # Define which components to visualize
-pca_x <- "PC1"
-pca_y <- "PC2"  
+pca_x <- "PC2"
+pca_y <- "PC3"  
 
 # Update ggplot figures
 pca_plot <- ggplot(pca_results, aes_string(x = pca_x, y = pca_y, color = "Watershed")) +
