@@ -17,13 +17,10 @@ la_data_dir <- here("Data/Intermediate/Trimmed no core or marine/Yukon/LA Data")
 
 
 # 2017 Kuskokwim 
-
-
-# 2014 Nushagak 
-data_dir <- here("Data/Intermediate/Cleaned but not trimmed/2014 Nush")
-metadata_path <- here("/Users/benjaminmakhlouf/Research_repos/Western_Ak_otolith_stock_discrimination/Data/Processed/Extracted Natal Origins/2014 Nushagak_Cleaned_Natal_Origins.csv")
-output_dir <- here("Data/Intermediate/Trimmed no core/Nush/Diagnostic Plots")
-la_data_dir <- here("Data/Intermediate/Trimmed no core/Nush/LA Data")
+data_dir <- here("/Users/benjaminmakhlouf/Research_repos/Western_Ak_otolith_stock_discrimination/Data/Intermediate/Trimmed no core/Kusko/LA Data")
+metadata_path <- here("Data/Processed/Extracted Natal Origins/ALL_DATA_2017_Kusko_Natal_Origins.csv")
+output_dir <- here("Data/Intermediate/Trimmed no core or marine/Kusko/Diagnostic Plots")
+la_data_dir <- here("Data/Intermediate/Trimmed no core or marine/Kusko/LA Data")
 
 
 
