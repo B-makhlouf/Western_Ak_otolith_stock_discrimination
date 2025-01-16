@@ -7,9 +7,9 @@ if (T){
   
   # Define directories and their corresponding metadata files
   data_directories <- list(
-    Yukon2015 = here("Data/Intermediate/Trimmed no core/Yukon/LA Data"),
-    Kusko2017 = here("Data/Intermediate/Trimmed no core/Kusko/LA Data"), 
-    Nush2014 = here("Data/Intermediate/Trimmed no core/Nush/LA Data")
+    Yukon2015 = here("Data/Intermediate/Trimmed no core or marine/Yukon/LA Data"),
+    Kusko2017 = here("Data/Intermediate/Trimmed no core or marine/Kusko/LA Data"), 
+    Nush2014 = here("Data/Intermediate/Trimmed no core or marine/Nush/LA Data")
   )
   
   # Function to interpolate Iso values
@@ -21,7 +21,7 @@ if (T){
     approx(
       x = seq_along(data$Iso),
       y = data$Iso,
-      xout = seq(1, nrow(data), length.out = 1000),
+      xout = seq(1, nrow(data), length.out = 500),
       method = "linear",
       rule = 2
     )$y
@@ -115,7 +115,7 @@ metadata <- tibble(
 )
 
 # Define a range of natal origins 
-natal_origin_filtering<- c(.703,.715)
+natal_origin_filtering<- c(.700,.710)
 
 #Find the indices of the natal origins that are within the range
 natal_origin_indices<- which(metadata$Natal_iso >= natal_origin_filtering[1] & metadata$Natal_iso <= natal_origin_filtering[2])
@@ -228,24 +228,44 @@ ui <- fluidPage(
     sidebarPanel(
       helpText("Click on a point in the PCA plot to view Iso vs. Distance for that Fish ID."),
       helpText("Drag to zoom in on the PCA plot."),
-      selectInput("xComp", "X Component:", choices = names(pca_results), selected = "PC2"),
-      selectInput("yComp", "Y Component:", choices = names(pca_results), selected = "PC3"),
-      actionButton("resetZoom", "Reset Zoom")  # Add Reset Zoom button
+      selectInput("xComp", "X Component:", choices = names(pca_results), selected = "PC1"),
+      selectInput("yComp", "Y Component:", choices = names(pca_results), selected = "PC2"),
+      sliderInput("natalOriginRange", "Filter Natal Origin Range:",
+                  min = min(pca_results$Natal_iso), max = max(pca_results$Natal_iso),
+                  value = range(pca_results$Natal_iso), step = 0.0001),
+      actionButton("resetZoom", "Reset Zoom"),
+      actionButton("applyFilter", "Apply Filter")
     ),
     mainPanel(
-      plotOutput("pcaPlot", 
-                 click = "pcaClick", 
-                 brush = brushOpts(id = "pcaBrush", resetOnNew = TRUE)),
-      plotOutput("isoPlot")
+      plotOutput("pcaPlot", click = "pcaClick", brush = brushOpts(id = "pcaBrush", resetOnNew = TRUE)),
+      plotOutput("isoPlot"),
+      tabsetPanel(
+        tabPanel("Variance Summary", tableOutput("varianceTable")),
+        tabPanel("Top Features", tableOutput("topFeaturesTable"))
+      )
     )
   )
 )
 
-# Define Server
+# Server
 server <- function(input, output, session) {
   
-  # Reactive values for zoom region
+  # Reactive values for filtered PCA data and zoom region
+  filteredPCA <- reactiveVal(pca_results)
   zoomRegion <- reactiveValues(x = NULL, y = NULL)
+  
+  # Apply natal origin filter
+  observeEvent(input$applyFilter, {
+    filtered <- pca_results %>%
+      filter(Natal_iso >= input$natalOriginRange[1], Natal_iso <= input$natalOriginRange[2])
+    filteredPCA(filtered)
+  })
+  
+  # Reset zoom when the reset button is clicked
+  observeEvent(input$resetZoom, {
+    zoomRegion$x <- NULL
+    zoomRegion$y <- NULL
+  })
   
   # Observe brush input for zoom
   observeEvent(input$pcaBrush, {
@@ -259,15 +279,9 @@ server <- function(input, output, session) {
     }
   })
   
-  # Reset zoom when the reset button is clicked
-  observeEvent(input$resetZoom, {
-    zoomRegion$x <- NULL
-    zoomRegion$y <- NULL
-  })
-  
-  # Render PCA Plot with dynamic components and zoom
+  # Render PCA Plot with filtering and zoom
   output$pcaPlot <- renderPlot({
-    ggplot(pca_results, aes_string(x = input$xComp, y = input$yComp, color = "Watershed")) +
+    ggplot(filteredPCA(), aes_string(x = input$xComp, y = input$yComp, color = "Watershed")) +
       geom_point(size = 2, alpha = 0.8) +
       theme_classic() +
       labs(title = "PCA of Iso Values by Watershed",
@@ -285,13 +299,13 @@ server <- function(input, output, session) {
   
   # Update selected Fish ID based on click
   observeEvent(input$pcaClick, {
-    nearPoint <- nearPoints(pca_results, input$pcaClick, threshold = 5, maxpoints = 1)
+    nearPoint <- nearPoints(filteredPCA(), input$pcaClick, threshold = 5, maxpoints = 1)
     if (nrow(nearPoint) > 0) {
       selectedFish(nearPoint$Fish_id[1])
     }
   })
   
-  # Render Iso Plot
+  # Render Iso Plot for selected Fish ID
   output$isoPlot <- renderPlot({
     req(selectedFish())
     
@@ -304,7 +318,7 @@ server <- function(input, output, session) {
       Iso = measurement_array[fishIndex, ]
     )
     
-    # Calculate moving average (smooth the Iso data)
+    # Calculate moving average
     isoData <- isoData %>%
       mutate(MovingAvg = zoo::rollapply(Iso, width = 60, FUN = mean, fill = NA, align = "center"))
     
@@ -316,6 +330,24 @@ server <- function(input, output, session) {
       labs(title = paste("Iso vs. Distance for Fish ID:", selectedFish()),
            x = "Distance",
            y = "Iso")
+  })
+  
+  # Render Variance Summary Table
+  output$varianceTable <- renderTable({
+    tibble(
+      Principal_Component = paste0("PC", seq_along(proportion_variance)),
+      Variance_Explained = round(proportion_variance, 3),
+      Cumulative_Variance = round(cumulative_variance, 3)
+    )
+  })
+  
+  # Render Top Features Table
+  output$topFeaturesTable <- renderTable({
+    bind_rows(
+      top_features_PC1 %>% mutate(PC = "PC1"),
+      top_features_PC2 %>% mutate(PC = "PC2"),
+      top_features_PC3 %>% mutate(PC = "PC3")
+    )
   })
 }
 
