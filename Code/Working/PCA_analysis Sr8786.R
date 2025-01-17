@@ -126,6 +126,11 @@ metadata_filtered<- metadata[natal_origin_indices,]
 # Filter the measurement array to only include the natal origins within the range
 measurement_array_filtered<- measurement_array[natal_origin_indices,]
 
+# Add the metadata to the front of measurement_array and save as as .csv 
+
+all_data<- cbind(metadata_filtered, measurement_array_filtered)
+
+write.csv(all_data, "Data/Intermediate/PCA_data.csv")
 
 # Run PCA
 results <- prcomp(measurement_array_filtered, scale. = TRUE)
