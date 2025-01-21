@@ -16,6 +16,12 @@ output_dir <- here("Data/Intermediate/Trimmed no core or marine/Yukon/Diagnostic
 la_data_dir <- here("Data/Intermediate/Trimmed no core or marine/Yukon/LA Data")
 
 
+# 2016 Yukon 
+data_dir <- here("/Users/benjaminmakhlouf/Research_repos/Western_Ak_otolith_stock_discrimination/Data/Intermediate/Trimmed no core/Yukon/LA Data/2016 Yukon")
+metadata_path <- here("Data/Processed/Extracted Natal Origins/ALL_DATA_2016_Yukon_Natal_Origins.csv")
+output_dir <- here("Data/Intermediate/Trimmed no core or marine/Yukon/Diagnostic Plots")
+la_data_dir <- here("Data/Intermediate/Trimmed no core or marine/Yukon/LA Data")
+
 # 2017 Kuskokwim 
 data_dir <- here("/Users/benjaminmakhlouf/Research_repos/Western_Ak_otolith_stock_discrimination/Data/Intermediate/Trimmed no core/Kusko/LA Data")
 metadata_path <- here("Data/Processed/Extracted Natal Origins/ALL_DATA_2017_Kusko_Natal_Origins.csv")
@@ -37,7 +43,9 @@ metadata <- read.csv(metadata_path)
 files <- list.files(data_dir, full.names = TRUE)
 
 # Process each file
-for (file_path in files) {
+for (i in 1:length(files)) {
+  
+  file_path <- files[i]
   # Error handling for each file
   tryCatch({
     # Load individual data
@@ -76,7 +84,7 @@ for (file_path in files) {
     axis(1,at=seq(50,50*max(individual_data$Cycle) %/% 50,by=50))
     axis(2)
     box()
-    abline(h=0.70862, col="orange", lwd=3)
+    abline(h=0.7092, col="orange", lwd=3)
     
     #Rolling average calculation, change k to be window size 
     MA<-zoo::rollmean(individual_data$Iso,k=50,align='center',na.pad=T)

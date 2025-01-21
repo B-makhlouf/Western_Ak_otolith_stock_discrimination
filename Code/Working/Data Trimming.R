@@ -13,6 +13,12 @@ metadata_path <- here("Data/Processed/Extracted Natal Origins/ALL_DATA_2015_Yuko
 output_dir <- here("Data/Intermediate/Trimmed no core/Yukon/Diagnostic Plots")
 la_data_dir <- here("Data/Intermediate/Trimmed no core/Yukon/LA Data")
 
+# 2016 Yukon 
+data_dir <- here("Data/Intermediate/Cleaned but not trimmed/2016 Yukon")
+metadata_path <- here("Data/Processed/Extracted Natal Origins/ALL_DATA_2016_Yukon_Natal_Origins.csv")
+output_dir <- here("Data/Intermediate/Trimmed no core/Yukon/Diagnostic Plots")
+la_data_dir <- here("Data/Intermediate/Trimmed no core/Yukon/LA Data")
+
 
 # 2017 Kuskokwim 
 data_dir <- here("Data/Intermediate/Cleaned but not trimmed/2017 Kusko")

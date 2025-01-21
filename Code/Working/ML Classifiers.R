@@ -8,8 +8,8 @@ All_Data <- read.csv("Data/Intermediate/PCA_data.csv")
 
 ## TO TEST 
 # Filter all data to be between .705-.709
-All_Data <- All_Data %>%
-  filter(All_Data$Natal_iso >= 0.706 & All_Data$Natal_iso <= 0.708)
+#All_Data <- All_Data %>%
+#  filter(All_Data$Natal_iso >= 0.706 & All_Data$Natal_iso <= 0.708)
 
 
 # Preprocess data

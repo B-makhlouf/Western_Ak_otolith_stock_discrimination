@@ -27,6 +27,7 @@ if (T){
     )$y
   }
   
+
   # Function to process all files in a directory and filter by Fish_id
   process_directory <- function(files, metadata) {
     files %>%
@@ -55,7 +56,7 @@ if (T){
           )
         }, error = function(e) {
           message("Error processing file: ", .x, " - ", e$message)
-          tibble(Fish_id = NA, Watershed = NA, Natal_Iso = NA, Iso = list(rep(NA, 1000)))
+          tibble(Fish_id = NA, Watershed = NA, Natal_Iso = NA, Iso = list(rep(NA, 1200)))
         })
       })
   }
@@ -99,6 +100,7 @@ if (T){
 ids <- filtered_results$Fish_id
 watersheds <- filtered_results$Watershed
 natal_origins<- filtered_results$Natal_Iso
+
 
 
 #############################################################################
@@ -155,7 +157,7 @@ pca_y <- "PC2"
 
 # Update ggplot figures
 pca_plot <- ggplot(pca_results, aes_string(x = pca_x, y = pca_y, color = "Watershed")) +
-  geom_point(size = 2, alpha = .4) +
+  geom_point(size = 2, alpha = .2) +
   theme_classic() +
   labs(title = "PCA of Iso Values by Watershed",
        x = pca_x,
@@ -225,6 +227,11 @@ list(
 )
 } 
 
+# Extract the top 10 features into a vector
+
+PC1_features<- as.numeric(top_features_PC1$Feature)
+PC2_features<- as.numeric(top_features_PC2$Feature)
+PC3_features<- as.numeric(top_features_PC3$Feature)
 
 ################# R Shiny exploration plot 
 ui <- fluidPage(
@@ -327,11 +334,18 @@ server <- function(input, output, session) {
     isoData <- isoData %>%
       mutate(MovingAvg = zoo::rollapply(Iso, width = 60, FUN = mean, fill = NA, align = "center"))
     
-    # Plot Iso vs Distance with moving average
+    # Combine all PC feature values and assign colors
+    pc_features <- c(PC1_features, PC2_features, PC3_features)
+    feature_colors <- c(rep("red", length(PC1_features)), 
+                        rep("green", length(PC2_features)), 
+                        rep("blue", length(PC3_features)))
+    
+    # Plot Iso vs Distance with moving average and horizontal lines
     ggplot(isoData, aes(x = Distance, y = Iso)) +
       geom_point(alpha = 0.5) +
       geom_line(aes(y = MovingAvg), color = "blue", size = 1) +
-      geom_hline(yintercept = .7092, color = "gold")+
+      geom_vline(xintercept = pc_features, color = feature_colors) +
+      geom_hline(yintercept = 0.7092, color = "gold") +
       theme_classic() +
       labs(title = paste("Iso vs. Distance for Fish ID:", selectedFish()),
            x = "Distance",
