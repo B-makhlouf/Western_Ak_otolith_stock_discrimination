@@ -27,7 +27,6 @@ if (T){
     )$y
   }
   
-
   # Function to process all files in a directory and filter by Fish_id
   process_directory <- function(files, metadata) {
     files %>%
@@ -117,7 +116,7 @@ metadata <- tibble(
 )
 
 # Define a range of natal origins 
-natal_origin_filtering<- c(.700,.720)
+natal_origin_filtering<- c(.700,.750)
 
 #Find the indices of the natal origins that are within the range
 natal_origin_indices<- which(metadata$Natal_iso >= natal_origin_filtering[1] & metadata$Natal_iso <= natal_origin_filtering[2])
