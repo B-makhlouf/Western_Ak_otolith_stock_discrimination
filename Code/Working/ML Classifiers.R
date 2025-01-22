@@ -38,6 +38,7 @@ importance <- varImp(rf_model, scale = TRUE)
 print(importance)
 plot(importance, top = 10, main = "Variable Importance (Random Forest)")
 
+#Plot it in a sequence of highest importance 
 
 rf_predictions <- predict(rf_model, testData)
 confMatrix_rf <- confusionMatrix(rf_predictions, testData$Watershed)
