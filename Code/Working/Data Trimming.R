@@ -19,22 +19,17 @@ metadata_path <- here("Data/Final/Extracted Natal Origins/ALL_DATA_2017_Kusko_Na
 output_dir <- here("Data/Processed/Trim_Locations/Diagnostic_Plots")
 la_data_dir <- here("Data/Processed/Trim_Locations")
 
-# 2017 Kuskokwim 
-#data_dir <- here("Data/Intermediate/Cleaned but not trimmed/2017 Kusko")
-#metadata_path <- here("Dat
-
-
-# 2019 Kuskokwim
-#data_dir <- here("Data/Intermediate/Cleaned but not trimmed/2019 Kusko")
-#metadata_path <- here("Data/Processed/Extracted Natal Origins/ALL_DATA_2019_Kusko_Natal_Origins.csv")
-#output_dir <- here("Data/Intermediate/Trimmed no core/Kusko/Diagnostic Plots")
-#la_data_dir <- here("Data/Intermediate/Trimmed no core/Kusko/LA Data")
+# 2019 Kuskokwim 
+data_dir <- here("Data/Raw/LA Data/2019 Kusko")
+metadata_path <- here("Data/Final/Extracted Natal Origins/ALL_DATA_2019_Kusko_Natal_Origins.csv")
+output_dir <- here("Data/Processed/Trim_Locations/Diagnostic_Plots")
+la_data_dir <- here("Data/Processed/Trim_Locations")
 
 # 2014 Nushagak 
-#data_dir <- here("Data/Intermediate/Cleaned but not trimmed/2014 Nush")
-#metadata_path <- here("/Users/benjaminmakhlouf/Research_repos/Western_Ak_otolith_stock_discrimination/Data/Processed/Extracted Natal Origins/2014 Nushagak_Cleaned_Natal_Origins.csv")
-#output_dir <- here("Data/Intermediate/Trimmed no core/Nush/Diagnostic Plots")
-#la_data_dir <- here("Data/Intermediate/Trimmed no core/Nush/LA Data")
+data_dir <- here("Data/Raw/LA Data/2014 Nush")
+metadata_path <- here("/Users/benjaminmakhlouf/Research_repos/Western_Ak_otolith_stock_discrimination/Data/Final/Extracted Natal Origins/2014 Nushagak_Cleaned_Natal_Origins.csv")
+output_dir <- here("Data/Processed/Trim_Locations/Diagnostic_Plots")
+la_data_dir <- here("Data/Processed/Trim_Locations")
 
 # 2016 Yukon 
 #data_dir <- here("Data/Intermediate/Cleaned but not trimmed/2016 Yukon")
@@ -71,6 +66,9 @@ for (file_path in files) {
     natal_iso_start <- fish_metadata$natal_start
     natal_iso_end <- fish_metadata$natal_end
     
+    # calculate the mean Sr88 between natal origin
+    natal_Sr88 <- mean(individual_data$Sr88[individual_data$Microns > natal_iso_start & individual_data$Microns < natal_iso_end])
+    
     # Plot Iso vs Microns
     individual_data$Iso_MA <- zoo::rollmean(individual_data$Iso, 60, fill = NA)
     
@@ -98,31 +96,39 @@ for (file_path in files) {
       
     } else if (Watershed == "Kusko") {
       
-      # Define Sr88 threshold for Kuskokwim
-      Sr88_threshold <- max(individual_data$Sr88)  # Example: adjust as needed
-      
       # Define natal thresholds for Kuskokwim
       natal_threshold <- c(0.7088, 0.7095)  # Example: customize for Kuskokwim
       
+      # Subset the data to include only rows where Iso_MA is within the natal threshold
+      subset_data <- individual_data[individual_data$Iso_MA >= natal_threshold[1] & individual_data$Iso_MA <= natal_threshold[2] & individual_data$Microns > natal_iso_end & individual_data$Microns > (natal_iso_end+ 300) & individual_data$Sr88 > (1.2 * natal_Sr88), ]
+      
+      # Order the subset data by the relevant column (e.g., Sr8786MA) and get the first 100 rows
+      first_100_data <- subset_data[1:300, ]
+      
+      # Find the maximum Sr88 value within these 100 rows
+      Sr88_threshold <- max(first_100_data$Sr88, na.rm = TRUE)
+      
       # Find the index for Kuskokwim Watershed
       Sr88_threshold_index <- which(
-        individual_data$Sr88 == Sr88_threshold & 
-          individual_data$Iso_MA > natal_threshold[1] & 
-          individual_data$Iso_MA < natal_threshold[2] & 
+          individual_data$Sr88 == Sr88_threshold & 
+          individual_data$Iso_MA >= natal_threshold[1] & 
+          individual_data$Iso_MA <= natal_threshold[2] & 
           individual_data$Microns > natal_iso_end
       )[1]
       
-    } else if (Watershed == "OtherWatershed") {
+    } else if (Watershed == "Nush") {
       
       # Define Sr88 threshold for another watershed
-      Sr88_threshold <- 0.88  # Example threshold
       
+      Sr88_threshold <- max(individual_data$Sr88[individual_data$Microns > natal_iso_end], na.rm = TRUE)
+      
+    
       # Define natal thresholds for this watershed
-      natal_threshold <- c(0.7090, 0.7095)  # Example: adjust as needed
+      natal_threshold <- c(0.7087, 0.7095)  # Example: adjust as needed
       
       # Find the index for this watershed
       Sr88_threshold_index <- which(
-        individual_data$Sr88 > Sr88_threshold & 
+        individual_data$Sr88 == Sr88_threshold & 
           individual_data$Iso_MA > natal_threshold[1] & 
           individual_data$Iso_MA < natal_threshold[2] & 
           individual_data$Microns > natal_iso_end
