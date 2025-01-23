@@ -2,15 +2,12 @@
 library(tidyverse)
 library(here)
 library(shiny)
+library(viridis)
 
 if (T){
   
   # Define directories and their corresponding metadata files
-  data_directories <- list(
-    Yukon2015 = here("Data/Intermediate/Trimmed no core or marine/Yukon/LA Data"),
-    Kusko2017 = here("Data/Intermediate/Trimmed no core or marine/Kusko/LA Data"), 
-    Nush2014 = here("Data/Intermediate/Trimmed no core or marine/Nush/LA Data")
-  )
+  data_directory <- here("Data/Processed/Trim_Locations")
   
   # Function to interpolate Iso values
   interpolate_data <- function(data) {
@@ -28,20 +25,27 @@ if (T){
   }
   
   # Function to process all files in a directory and filter by Fish_id
-  process_directory <- function(files, metadata) {
+  process_directory <- function(files) {
     files %>%
       map_df(~ {
         tryCatch({
           file_name <- basename(.x)
           
           # Read the data and select relevant columns
-          ind_data <- read_csv(.x) %>% select(Iso, Sr88, Watershed, Fish_id, natal_iso)
+          ind_data <- read_csv(.x) %>% select(Iso, 
+                                              Sr88, 
+                                              Watershed, 
+                                              Fish_id, 
+                                              natal_origin_iso, 
+                                              natal_iso_start, 
+                                              natal_iso_end,
+                                              marine_start)
           watershed <- ind_data$Watershed[1]
-          natal_iso <- ind_data$natal_iso[1]  # Assuming this column exists in your data
+          natal_iso <- ind_data$natal_iso[1]  
           fish_id <- ind_data$Fish_id[1]
-          
-          # Debug message to check the assigned natal_iso
-          message("Assigned natal_iso: ", natal_iso)
+          natal_iso_start <- ind_data$natal_iso_start[1]
+          natal_iso_end <- ind_data$natal_iso_end[1]
+          marine_start <- ind_data$marine_start[1]
           
           # Interpolate Iso values
           interpolated <- interpolate_data(ind_data)
@@ -50,28 +54,26 @@ if (T){
           tibble(
             Fish_id = fish_id,
             Watershed = watershed,
-            Natal_Iso = natal_iso,  # Include Natal_Iso in the tibble
-            Iso = list(interpolated)
+            Iso = list(interpolated), 
+            Natal_Iso = natal_iso,
+            Natal_Iso_Start = natal_iso_start,
+            Natal_Iso_End = natal_iso_end,
+            Marine_Start = marine_start
           )
         }, error = function(e) {
-          message("Error processing file: ", .x, " - ", e$message)
           tibble(Fish_id = NA, Watershed = NA, Natal_Iso = NA, Iso = list(rep(NA, 1200)))
         })
       })
   }
   
   # Process all datasets
-  results_list <- map(data_directories, ~ {
+  results_list <- map(data_directory, ~ {
     files <- list.files(.x, full.names = TRUE)
     process_directory(files)
   })
   
   # Combine results into a single tibble
   combined_results <- bind_rows(results_list, .id = "Dataset")
-  
-  # Debug message to check if Natal_Iso is in the final combined_results
-  print(colnames(combined_results))
-  print(head(combined_results))
   
   # Remove rows with all NA in the Iso column
   filtered_results <- combined_results %>%
@@ -129,9 +131,18 @@ measurement_array_filtered<- measurement_array[natal_origin_indices,]
 
 # Add the metadata to the front of measurement_array and save as as .csv 
 
-all_data<- cbind(metadata_filtered, measurement_array_filtered)
+#all_data<- cbind(metadata_filtered, measurement_array_filtered)
 
-write.csv(all_data, "Data/Intermediate/PCA_data.csv")
+#write.csv(all_data, "Data/Intermediate/PCA_data.csv")
+
+
+if (T){}
+# Read in the latest version of PCA_data.csv 
+all_data<- read.csv("Data/Processed/PCA_data.csv")
+
+# Extract metadata
+metadata_filtered<- all_data[,1:4]
+measurement_array_filtered<- all_data[-c(1:4)]
 
 # Run PCA
 results <- prcomp(measurement_array_filtered, scale. = TRUE)
@@ -149,6 +160,9 @@ pca_results <- tibble(
 )
 
 
+
+
+################################################################################
 ############################
 # Define which components to visualize
 pca_x <- "PC1"
@@ -175,6 +189,7 @@ pca_plot_natal_iso <- ggplot(pca_results, aes_string(x = pca_x, y = pca_y, color
 cowplot::plot_grid(pca_plot, pca_plot_natal_iso, labels = c("A", "B"))
 
 
+################################################################################
 ##############################
 # How much does each component contribute to the variance? 
 
@@ -231,6 +246,56 @@ list(
 PC1_features<- as.numeric(top_features_PC1$Feature)
 PC2_features<- as.numeric(top_features_PC2$Feature)
 PC3_features<- as.numeric(top_features_PC3$Feature)
+
+
+
+###############################################################
+library(ggplot2)
+library(viridis)
+library(tidyr)
+
+# Create a data frame from the matrix
+feature_matrix <- matrix(1, nrow = 4, ncol = 1000)
+feature_matrix[1, ] <- abs(loadings$PC1)
+feature_matrix[2, ] <- abs(loadings$PC2)
+feature_matrix[3, ] <- abs(loadings$PC3)
+
+# Convert to long format for ggplot
+plot_data <- data.frame(
+  Index = rep(1:1000, times = 3),
+  FeatureImportance = c(feature_matrix[1, ], feature_matrix[2, ], feature_matrix[3, ]),
+  Component = rep(c("PC1", "PC2", "PC3"), each = 1000),
+  Y = rep(1, 3000) # Constant Y value for straight line
+)
+
+# Plot with facets
+feature_plot <- ggplot(plot_data, aes(x = Index, y = Y, color = FeatureImportance)) +
+  geom_point(size = 5) +
+  scale_color_viridis(option = "plasma", direction = -1) +
+  theme_grey() +
+  labs(
+    title = "Feature Importance of Index in PCA",
+    x = "Index",
+    y = NULL, # Remove y-axis label
+    color = "Feature\nImportance"
+  ) +
+  facet_wrap(~Component, nrow = 3) + # Separate panels for PC1, PC2, PC3
+  theme(
+    axis.line.y = element_blank(), # Remove y-axis line
+    axis.ticks.y = element_blank(), # Remove y-axis ticks
+    axis.text.y = element_blank(), # Remove y-axis text
+    legend.title = element_text(size = 10),
+    legend.text = element_text(size = 8)
+  )
+
+# Display the plot
+print(feature_plot)
+
+#Export as a long pdf 
+ggsave("Figures/feature_plot.pdf", feature_plot, width = 16, height = 8.5, units = "in")
+
+
+
 
 ################# R Shiny exploration plot 
 ui <- fluidPage(

@@ -66,3 +66,16 @@ confusion_matrix
 
 
 
+############### 
+# Read in the dtw data 
+Distance_matrix <- read.csv("Data/Processed/DTW_distance_matrix.csv", row.names = 1)
+Distance_matrix <- as.matrix(Distance_matrix)
+heatmap(Distance_matrix)
+
+
+
+
+
+
+
+
