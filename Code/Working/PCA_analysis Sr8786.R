@@ -254,6 +254,10 @@ library(ggplot2)
 library(viridis)
 library(tidyr)
 
+
+
+
+
 # Create a data frame from the matrix
 feature_matrix <- matrix(1, nrow = 4, ncol = 1000)
 feature_matrix[1, ] <- abs(loadings$PC1)
