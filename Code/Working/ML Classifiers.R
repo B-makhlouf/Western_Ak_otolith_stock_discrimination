@@ -3,7 +3,7 @@ library(caret)
 library(ggplot2)
 
 # Load the data
-All_Data <- read.csv("Data/Intermediate/PCA_data.csv")
+All_Data <- read.csv("Data/Processed/PCA_data.csv")
 
 # Preprocess data
 Fish_ids <- All_Data$Fish_id

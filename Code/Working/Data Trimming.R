@@ -13,6 +13,12 @@ metadata_path <- here("Data/Final/Extracted Natal Origins/ALL_DATA_2015_Yukon_Na
 output_dir <- here("/Users/benjaminmakhlouf/Research_repos/Western_Ak_otolith_stock_discrimination/Data/Processed/Trim_Locations/Diagnostic_Plots")
 la_data_dir <- here("Data/Processed/Trim_Locations")
 
+# 2016 Yukon 
+data_dir <- here("Data/Raw/LA Data/2016 Yukon")
+metadata_path <- here("Data/Final/Extracted Natal Origins/ALL_DATA_2016_Yukon_Natal_Origins.csv")
+output_dir <- here("Data/Processed/Trim_Locations/Diagnostic_Plots")
+la_data_dir <- here("Data/Processed/Trim_Locations")
+
 # # 2017 Kuskokwim
 data_dir <- here("Data/Raw/LA Data/2017 Kusko")
 metadata_path <- here("Data/Final/Extracted Natal Origins/ALL_DATA_2017_Kusko_Natal_Origins.csv")
@@ -20,10 +26,10 @@ output_dir <- here("Data/Processed/Trim_Locations/Diagnostic_Plots")
 la_data_dir <- here("Data/Processed/Trim_Locations")
 
 # # 2019 Kuskokwim 
-# data_dir <- here("Data/Raw/LA Data/2019 Kusko")
-# metadata_path <- here("Data/Final/Extracted Natal Origins/ALL_DATA_2019_Kusko_Natal_Origins.csv")
-# output_dir <- here("Data/Processed/Trim_Locations/Diagnostic_Plots")
-# la_data_dir <- here("Data/Processed/Trim_Locations")
+data_dir <- here("Data/Raw/LA Data/2019 Kusko")
+metadata_path <- here("Data/Final/Extracted Natal Origins/ALL_DATA_2019_Kusko_Natal_Origins.csv")
+output_dir <- here("Data/Processed/Trim_Locations/Diagnostic_Plots")
+la_data_dir <- here("Data/Processed/Trim_Locations")
 # 
 # # 2014 Nushagak 
 data_dir <- here("Data/Raw/LA Data/2014 Nush")
@@ -31,13 +37,11 @@ metadata_path <- here("/Users/benjaminmakhlouf/Research_repos/Western_Ak_otolith
 output_dir <- here("Data/Processed/Trim_Locations/Diagnostic_Plots")
 la_data_dir <- here("Data/Processed/Trim_Locations")
 
-# 2016 Yukon 
-#data_dir <- here("Data/Intermediate/Cleaned but not trimmed/2016 Yukon")
-#metadata_path <- here("Data/Processed/Extracted Natal Origins/ALL_DATA_2016_Yukon_Natal_Origins.csv")
-#output_dir <- here("Data/Intermediate/Trimmed no core/Yukon/Diagnostic Plots")
-#la_data_dir <- here("Data/Intermediate/Trimmed no core/Yukon/LA Data")
-
-
+# 2015 Nushagak 
+data_dir <- here("Data/Raw/LA Data/2015 Nush")
+metadata_path <- here("/Users/benjaminmakhlouf/Research_repos/Western_Ak_otolith_stock_discrimination/Data/Final/Extracted Natal Origins/2015 Nushagak_Cleaned_Natal_Origins.csv")
+output_dir <- here("Data/Processed/Trim_Locations/Diagnostic_Plots")
+la_data_dir <- here("Data/Processed/Trim_Locations")
 
 # Load metadata
 metadata <- read.csv(metadata_path)
@@ -45,7 +49,6 @@ metadata <- read.csv(metadata_path)
 # Load all individual files
 files <- list.files(data_dir, full.names = TRUE)
 
-file_path<- files[1]
 
 
 # Process each file
@@ -217,3 +220,4 @@ for (file_path in files) {
     message("Error processing file: ", file_path, "\nError message: ", e$message)
   })
 }
+

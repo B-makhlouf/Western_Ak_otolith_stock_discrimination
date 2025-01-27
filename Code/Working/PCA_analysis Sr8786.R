@@ -37,7 +37,7 @@ for (file_path in files) {
   
   # Trim the data between natal_iso_start and marine_start 
   ind_data <- ind_data %>%
-    filter(Microns >= natal_iso_start & Microns <= marine_start)
+    filter(Microns >= (natal_iso_start - 250)  & Microns <= (marine_start + 400))
   
   # Interpolate Iso values
   interpolated <- tryCatch({
@@ -102,7 +102,7 @@ metadata <- tibble(
 )
 
 # Define a range of natal origins 
-natal_origin_filtering<- c(.700,.750)
+natal_origin_filtering<- c(.700,.730)
 
 #Find the indices of the natal origins that are within the range
 natal_origin_indices<- which(metadata$Natal_iso >= natal_origin_filtering[1] & metadata$Natal_iso <= natal_origin_filtering[2])
@@ -115,12 +115,15 @@ measurement_array_filtered<- measurement_array[natal_origin_indices,]
 
 # Add the metadata to the front of measurement_array and save as as .csv 
 
-#all_data<- cbind(metadata_filtered, measurement_array_filtered)
+all_data<- cbind(metadata_filtered, measurement_array_filtered)
 
-#write.csv(all_data, "Data/Intermediate/PCA_data.csv")
+write.csv(all_data, "Data/Processed/PCA_data.csv")
+
+
+
 
 # Read in the latest version of PCA_data.csv 
-#all_data<- read.csv("Data/Processed/PCA_data.csv")
+all_data<- read.csv("Data/Processed/PCA_data.csv")
 
 # Extract metadata
 #metadata_filtered<- all_data[,1:4]
@@ -344,7 +347,7 @@ server <- function(input, output, session) {
   # Render PCA Plot with filtering and zoom
   output$pcaPlot <- renderPlot({
     ggplot(filteredPCA(), aes_string(x = input$xComp, y = input$yComp, color = "Watershed")) +
-      geom_point(size = 2, alpha = 0.8) +
+      geom_point(size = 2, alpha = 0.4) +
       theme_classic() +
       labs(title = "PCA of Iso Values by Watershed",
            x = input$xComp,
