@@ -4,99 +4,83 @@ library(here)
 library(shiny)
 library(viridis)
 
-if (T){
+# Directory containing files
+data_directory <- here("Data/Processed/Trim_Locations")
+files <- list.files(data_directory, full.names = TRUE)
+
+# Initialize an empty list to store results
+results_list <- list()
+
+
+# Loop through each file
+for (file_path in files) {
+  cat("\nProcessing file:", file_path, "\n")  # Debugging output
   
-  # Define directories and their corresponding metadata files
-  data_directory <- here("Data/Processed/Trim_Locations")
-  
-  # Function to interpolate Iso values
-  interpolate_data <- function(data) {
-    if (nrow(data) < 2 || all(is.na(data$Iso))) {
-      return(rep(NA, 1000))
-    }
-    
-    approx(
-      x = seq_along(data$Iso),
-      y = data$Iso,
-      xout = seq(1, nrow(data), length.out = 1000),
-      method = "linear",
-      rule = 2
-    )$y
-  }
-  
-  # Function to process all files in a directory and filter by Fish_id
-  process_directory <- function(files) {
-    files %>%
-      map_df(~ {
-        tryCatch({
-          file_name <- basename(.x)
-          
-          # Read the data and select relevant columns
-          ind_data <- read_csv(.x) %>% select(Iso, 
-                                              Sr88, 
-                                              Watershed, 
-                                              Fish_id, 
-                                              natal_origin_iso, 
-                                              natal_iso_start, 
-                                              natal_iso_end,
-                                              marine_start)
-          watershed <- ind_data$Watershed[1]
-          natal_iso <- ind_data$natal_iso[1]  
-          fish_id <- ind_data$Fish_id[1]
-          natal_iso_start <- ind_data$natal_iso_start[1]
-          natal_iso_end <- ind_data$natal_iso_end[1]
-          marine_start <- ind_data$marine_start[1]
-          
-          # Interpolate Iso values
-          interpolated <- interpolate_data(ind_data)
-          
-          # Return the result as a tibble
-          tibble(
-            Fish_id = fish_id,
-            Watershed = watershed,
-            Iso = list(interpolated), 
-            Natal_Iso = natal_iso,
-            Natal_Iso_Start = natal_iso_start,
-            Natal_Iso_End = natal_iso_end,
-            Marine_Start = marine_start
-          )
-        }, error = function(e) {
-          tibble(Fish_id = NA, Watershed = NA, Natal_Iso = NA, Iso = list(rep(NA, 1200)))
-        })
-      })
-  }
-  
-  # Process all datasets
-  results_list <- map(data_directory, ~ {
-    files <- list.files(.x, full.names = TRUE)
-    process_directory(files)
+  # Read the data
+  ind_data <- tryCatch({
+    read_csv(file_path)
+  }, error = function(e) {
+    cat("Error reading file:", e$message, "\n")
+    return(NULL)
   })
   
-  # Combine results into a single tibble
-  combined_results <- bind_rows(results_list, .id = "Dataset")
+  if (is.null(ind_data)) next  # Skip to the next file if read_csv fails
   
-  # Remove rows with all NA in the Iso column
+
+  # Extract metadata and debug
+  watershed <- ind_data$Watershed[1]
+  natal_iso <- ind_data$natal_origin_iso[1]
+  fish_id <- ind_data$Fish_id[1]
+  natal_iso_start <- ind_data$natal_microns_start[1]
+  natal_iso_end <- ind_data$natal_microns_end[1]
+  marine_start <- ind_data$marine_start[1]
+  
+  # Trim the data between natal_iso_start and marine_start 
+  ind_data <- ind_data %>%
+    filter(Microns >= natal_iso_start & Microns <= marine_start)
+  
+  # Interpolate Iso values
+  interpolated <- tryCatch({
+    if (nrow(ind_data) < 2 || all(is.na(ind_data$Iso))) {
+      rep(NA, 1000)
+    } else {
+      approx(
+        x = seq_along(ind_data$Iso),
+        y = ind_data$Iso,
+        xout = seq(1, nrow(ind_data), length.out = 1000),
+        method = "linear",
+        rule = 2
+      )$y
+    }
+  }, error = function(e) {
+    cat("Error in interpolation:", e$message, "\n")
+    return(rep(NA, 1000))
+  })
+  
+  # Save the results
+  results_list[[file_path]] <- tibble(
+    Fish_id = fish_id,
+    Watershed = watershed,
+    Iso = list(interpolated), 
+    Natal_Iso = natal_iso,
+    Natal_Iso_Start = natal_iso_start,
+    Natal_Iso_End = natal_iso_end,
+    Marine_Start = marine_start
+  )
+}
+
+  
+# Combine results into a single tibble
+combined_results <- bind_rows(results_list, .id = "Dataset")
+  
+# Remove rows with all NA in the Iso column
   filtered_results <- combined_results %>%
     filter(map_lgl(Iso, ~ !all(is.na(.))))
   
-  # Create a measurement array from the Iso values
-  measurement_array <- do.call(cbind, filtered_results$Iso)
-  measurement_array <- t(measurement_array)
+# Create a measurement array from the Iso values
+measurement_array <- do.call(cbind, filtered_results$Iso)
+measurement_array <- t(measurement_array) #transpose
   
-  # Check for missing and infinite values
-  if (anyNA(measurement_array) || any(is.infinite(measurement_array))) {
-    measurement_array[is.infinite(measurement_array)] <- NA
-    measurement_array <- apply(measurement_array, 2, function(x) {
-      if (any(is.na(x))) {
-        x[is.na(x)] <- mean(x, na.rm = TRUE)
-      }
-      return(x)
-    })
-  }
-}
-
-
-
 # Extract metadata
 ids <- filtered_results$Fish_id
 watersheds <- filtered_results$Watershed
@@ -135,14 +119,12 @@ measurement_array_filtered<- measurement_array[natal_origin_indices,]
 
 #write.csv(all_data, "Data/Intermediate/PCA_data.csv")
 
-
-if (T){}
 # Read in the latest version of PCA_data.csv 
-all_data<- read.csv("Data/Processed/PCA_data.csv")
+#all_data<- read.csv("Data/Processed/PCA_data.csv")
 
 # Extract metadata
-metadata_filtered<- all_data[,1:4]
-measurement_array_filtered<- all_data[-c(1:4)]
+#metadata_filtered<- all_data[,1:4]
+#measurement_array_filtered<- all_data[-c(1:4)]
 
 # Run PCA
 results <- prcomp(measurement_array_filtered, scale. = TRUE)
