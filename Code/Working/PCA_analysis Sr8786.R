@@ -276,7 +276,7 @@ plot_data <- data.frame(
 )
 
 # Plot with facets
-feature_plot <- ggplot(plot_data, aes(x = Index, y = Y, color = FeatureImportance)) +
+feature_plot_color <- ggplot(plot_data, aes(x = Index, y = Y, color = FeatureImportance)) +
   geom_point(size = 3) +
   scale_color_viridis(option = "plasma", direction = -1) +
   theme_grey() +
@@ -295,11 +295,56 @@ feature_plot <- ggplot(plot_data, aes(x = Index, y = Y, color = FeatureImportanc
     legend.text = element_text(size = 8)
   )
 
+feature_bar_plot <- ggplot(plot_data, aes(x = Index, y = FeatureImportance, color = FeatureImportance)) +
+  geom_bar(stat = "identity", position = "identity", width = 1, alpha = 0.4) + 
+  scale_color_viridis(option = "plasma", direction = -1) +
+  theme_grey() +
+  labs(
+    title = "Timeseries Loadings onto PCA variance",
+    x = "Index",
+    y = NULL, # Remove y-axis label
+    fill = "Loading (Abs. value)"
+  ) +
+  facet_wrap(~Component, nrow = 5) + # Separate panels for PC1 to PC5
+  theme(
+    axis.line.y = element_blank(), # Remove y-axis line
+    axis.ticks.y = element_blank(), # Remove y-axis ticks
+    axis.text.y = element_blank(), # Remove y-axis text
+    legend.title = element_text(size = 10),
+    legend.text = element_text(size = 8)
+  )
+
+feature_line_plot <- ggplot(plot_data, aes(x = Index, y = FeatureImportance, group = Component, color = FeatureImportance)) +
+  geom_line(alpha = 0.9, size = 1) + 
+  scale_color_viridis(option = "plasma", direction = -1) +
+  theme_grey() +
+  labs(
+    title = "Timeseries Loadings onto PCA variance",
+    x = "Index",
+    y = NULL,  # Remove y-axis label
+    color = "Loading (Abs. value)"
+  ) +
+  facet_wrap(~Component, nrow = 5) +  # Separate panels for PC1 to PC5
+  theme(
+    legend.title = element_text(size = 10),
+    legend.text = element_text(size = 8)
+  )
+
+# Put all in a single figure using cowplot 
+library(cowplot)
+
+# Combine the plots
+feature_plot <- plot_grid(feature_plot_color, feature_bar_plot, feature_line_plot, nrow = 3)
+
 # Display the plot
 print(feature_plot)
 
 # Export as a long PDF
 ggsave("Figures/feature_plot.pdf", feature_plot, width = 16, height = 11, units = "in") # Adjusted height for 5 panels
+
+
+
+
 
 library(NatParksPalettes)
 
