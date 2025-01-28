@@ -10,6 +10,9 @@ Fish_ids <- All_Data$Fish_id
 Watershed <- All_Data$Watershed
 Natal_iso <- All_Data$Natal_iso
 
+# How many samples are from each watershed 
+table(Watershed)
+
 # Remove metadata columns and ensure numeric data
 All_Data <- All_Data[,-c(1:4)]
 
@@ -56,6 +59,7 @@ print(knn_model)
 knn_predictions <- predict(knn_model, testData)
 confMatrix_knn <- confusionMatrix(knn_predictions, testData$Watershed)
 print(confMatrix_knn)
+
 
 ####### Classifier 3: Support Vector Machine (SVM) #######
 svm_model <- train(

@@ -240,35 +240,44 @@ library(viridis)
 library(tidyr)
 
 
-
-
+library(ggplot2)
+library(viridis)
+library(tidyr)
 
 # Create a data frame from the matrix
-feature_matrix <- matrix(1, nrow = 4, ncol = 1000)
+feature_matrix <- matrix(1, nrow = 5, ncol = 1000)
 feature_matrix[1, ] <- abs(loadings$PC1)
 feature_matrix[2, ] <- abs(loadings$PC2)
 feature_matrix[3, ] <- abs(loadings$PC3)
+feature_matrix[4, ] <- abs(loadings$PC4)
+feature_matrix[5, ] <- abs(loadings$PC5)
 
 # Convert to long format for ggplot
 plot_data <- data.frame(
-  Index = rep(1:1000, times = 3),
-  FeatureImportance = c(feature_matrix[1, ], feature_matrix[2, ], feature_matrix[3, ]),
-  Component = rep(c("PC1", "PC2", "PC3"), each = 1000),
-  Y = rep(1, 3000) # Constant Y value for straight line
+  Index = rep(1:1000, times = 5),
+  FeatureImportance = c(
+    feature_matrix[1, ],
+    feature_matrix[2, ],
+    feature_matrix[3, ],
+    feature_matrix[4, ],
+    feature_matrix[5, ]
+  ),
+  Component = rep(c("PC1", "PC2", "PC3", "PC4", "PC5"), each = 1000),
+  Y = rep(1, 5000) # Constant Y value for straight line
 )
 
 # Plot with facets
 feature_plot <- ggplot(plot_data, aes(x = Index, y = Y, color = FeatureImportance)) +
-  geom_point(size = 5) +
+  geom_point(size = 3) +
   scale_color_viridis(option = "plasma", direction = -1) +
   theme_grey() +
   labs(
-    title = "Feature Importance of Index in PCA",
+    title = "Timeseries Loadings onto PCA variance",
     x = "Index",
     y = NULL, # Remove y-axis label
-    color = "Feature\nImportance"
+    color = "Loading (Abs. value)"
   ) +
-  facet_wrap(~Component, nrow = 3) + # Separate panels for PC1, PC2, PC3
+  facet_wrap(~Component, nrow = 5) + # Separate panels for PC1 to PC5
   theme(
     axis.line.y = element_blank(), # Remove y-axis line
     axis.ticks.y = element_blank(), # Remove y-axis ticks
@@ -280,8 +289,8 @@ feature_plot <- ggplot(plot_data, aes(x = Index, y = Y, color = FeatureImportanc
 # Display the plot
 print(feature_plot)
 
-#Export as a long pdf 
-ggsave("Figures/feature_plot.pdf", feature_plot, width = 16, height = 8.5, units = "in")
+# Export as a long PDF
+ggsave("Figures/feature_plot.pdf", feature_plot, width = 16, height = 11, units = "in") # Adjusted height for 5 panels
 
 
 

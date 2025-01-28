@@ -6,7 +6,7 @@ library(cowplot)
 
 # Define directories
 
-
+#### Yukon 
 ### 2015 Yukon 
 data_dir <- here("Data/Raw/LA Data/2015 Yukon")
 metadata_path <- here("Data/Final/Extracted Natal Origins/ALL_DATA_2015_Yukon_Natal_Origins.csv")
@@ -18,6 +18,31 @@ data_dir <- here("Data/Raw/LA Data/2016 Yukon")
 metadata_path <- here("Data/Final/Extracted Natal Origins/ALL_DATA_2016_Yukon_Natal_Origins.csv")
 output_dir <- here("Data/Processed/Trim_Locations/Diagnostic_Plots")
 la_data_dir <- here("Data/Processed/Trim_Locations")
+
+# 2017 Yukon
+data_dir <- here("Data/Raw/LA Data/2017 Yukon")
+metadata_path <- here("Data/Final/Extracted Natal Origins/2017 Yukon_Cleaned_Natal_Origins.csv")
+output_dir <- here("Data/Processed/Trim_Locations/Diagnostic_Plots")
+la_data_dir <- here("Data/Processed/Trim_Locations")
+
+# No 2018 
+
+# 2019 Yukon
+data_dir <- here("Data/Raw/LA Data/2019 Yukon")
+metadata_path <- here("Data/Final/Extracted Natal Origins/2019 Yukon_Cleaned_Natal_Origins.csv")
+output_dir <- here("Data/Processed/Trim_Locations/Diagnostic_Plots")
+la_data_dir <- here("Data/Processed/Trim_Locations")
+
+# No 2020
+
+# 2021 Yukon 
+data_dir <- here("Data/Raw/LA Data/2021 Yukon")
+metadata_path <- here("Data/Final/Extracted Natal Origins/ALL_DATA_2021_Yukon_Natal_Origins.csv")
+output_dir <- here("Data/Processed/Trim_Locations/Diagnostic_Plots")
+la_data_dir <- here("Data/Processed/Trim_Locations")
+
+#
+# Kuskokwim
 
 # # 2017 Kuskokwim
 data_dir <- here("Data/Raw/LA Data/2017 Kusko")
@@ -31,6 +56,24 @@ metadata_path <- here("Data/Final/Extracted Natal Origins/ALL_DATA_2019_Kusko_Na
 output_dir <- here("Data/Processed/Trim_Locations/Diagnostic_Plots")
 la_data_dir <- here("Data/Processed/Trim_Locations")
 # 
+
+# 2020 Kuskokwim 
+data_dir <- here("Data/Raw/LA Data/2020 Kusko")
+metadata_path <- here("Data/Final/Extracted Natal Origins/ALL_DATA_2020_Kusko_Natal_Origins.csv")
+output_dir <- here("Data/Processed/Trim_Locations/Diagnostic_Plots")
+la_data_dir <- here("Data/Processed/Trim_Locations")
+
+# 2021 Kuskokwim
+data_dir <- here("Data/Raw/LA Data/2021 Kusko")
+metadata_path <- here("/Users/benjaminmakhlouf/Research_repos/Western_Ak_otolith_stock_discrimination/Data/Final/Extracted Natal Origins/ALL_DATA_2021_Kusko_Natal_Origins.csv")
+output_dir <- here("Data/Processed/Trim_Locations/Diagnostic_Plots")
+la_data_dir <- here("Data/Processed/Trim_Locations")
+
+
+
+
+
+
 # # 2014 Nushagak 
 data_dir <- here("Data/Raw/LA Data/2014 Nush")
 metadata_path <- here("/Users/benjaminmakhlouf/Research_repos/Western_Ak_otolith_stock_discrimination/Data/Final/Extracted Natal Origins/2014 Nushagak_Cleaned_Natal_Origins.csv")
@@ -43,13 +86,19 @@ metadata_path <- here("/Users/benjaminmakhlouf/Research_repos/Western_Ak_otolith
 output_dir <- here("Data/Processed/Trim_Locations/Diagnostic_Plots")
 la_data_dir <- here("Data/Processed/Trim_Locations")
 
+#2011 Nushagak
+data_dir <- here("Data/Raw/LA Data/2011 Nush")
+metadata_path <- here("Data/Final/Extracted Natal Origins/2011 Nushagak_Cleaned_Natal_Origins.csv")
+output_dir <- here("Data/Processed/Trim_Locations/Diagnostic_Plots")
+la_data_dir <- here("Data/Processed/Trim_Locations")
+
 # Load metadata
 metadata <- read.csv(metadata_path)
 
 # Load all individual files
 files <- list.files(data_dir, full.names = TRUE)
 
-
+#file_path<- files[1]
 
 # Process each file
 for (file_path in files) {
@@ -109,44 +158,44 @@ for (file_path in files) {
     # 
     # 
     # 
-    # # Create Sr88_MA plot
-    # sr88_ma_plot <- ggplot(individual_data, aes(x = Microns, y = Sr88)) +
-    #   geom_point(color = "blue") +
-    #   geom_vline(xintercept = final_index, color = "red") +
-    #   labs(
-    #     title = paste("Sr88 Moving Average:", fish_id),
-    #     x = "Microns",
-    #     y = "Sr88_MA"
-    #   ) +
-    #   theme_minimal()
-    # 
-    # # Create Gradient plot
-    # gradient_plot <- ggplot(individual_data, aes(x = Microns, y = Sr88_MA_Gradient)) +
-    #   geom_line(color = "red") +
-    #   geom_vline(xintercept = final_index, color = "red") +
-    #   labs(
-    #     title = paste("Sr88 Gradient:", fish_id),
-    #     x = "Microns",
-    #     y = "Gradient"
-    #   ) +
-    #   theme_minimal()
-    # 
-    # sr8786_ma_plot <- ggplot(individual_data, aes(x = Microns, y = Iso)) +
-    #   geom_point(color = "grey60", alpha = .3) +
-    #   geom_vline(xintercept = final_index, color = "red") +
-    #   geom_line(aes(y = Iso_MA), color = "red") +
-    #   labs(
-    #     title = paste("Sr87/86 Moving Average:", fish_id),
-    #     x = "Microns",
-    #     y = "Sr8786_MA"
-    #   ) +
-    #   theme_minimal()
-    # 
-    # # Combine the three plots
-    # combined_plot <- plot_grid(
-    #   sr88_ma_plot, gradient_plot, sr8786_ma_plot,
-    #   ncol = 1, align = "v", labels = c("A", "B", "C")
-    # )
+    # Create Sr88_MA plot
+    sr88_ma_plot <- ggplot(individual_data, aes(x = Microns, y = Sr88)) +
+      geom_point(color = "blue") +
+      geom_vline(xintercept = marine_cut, color = "red") +
+      labs(
+        title = paste("Sr88 Moving Average:", fish_id),
+        x = "Microns",
+        y = "Sr88_MA"
+      ) +
+      theme_minimal()
+
+    # Create Gradient plot
+    gradient_plot <- ggplot(individual_data, aes(x = Microns, y = Sr88_MA_Gradient)) +
+      geom_line(color = "red") +
+      geom_vline(xintercept = marine_cut, color = "red") +
+      labs(
+        title = paste("Sr88 Gradient:", fish_id),
+        x = "Microns",
+        y = "Gradient"
+      ) +
+      theme_minimal()
+
+    sr8786_ma_plot <- ggplot(individual_data, aes(x = Microns, y = Iso)) +
+      geom_point(color = "grey60", alpha = .3) +
+      geom_vline(xintercept = marine_cut, color = "red") +
+      geom_line(aes(y = Iso_MA), color = "red") +
+      labs(
+        title = paste("Sr87/86 Moving Average:", fish_id),
+        x = "Microns",
+        y = "Sr8786_MA"
+      ) +
+      theme_minimal()
+
+    # Combine the three plots
+    combined_plot <- plot_grid(
+      sr88_ma_plot, gradient_plot, sr8786_ma_plot,
+      ncol = 1, align = "v", labels = c("A", "B", "C")
+    )
     # 
     # 
 # 
