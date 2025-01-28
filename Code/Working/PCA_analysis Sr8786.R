@@ -218,6 +218,18 @@ top_features_PC3 <- loadings %>%
   slice(1:10) %>%
   select(Feature, PC3)
 
+# Identify top 10 features driving PC4
+top_features_PC4 <- loadings %>%
+  arrange(desc(abs(PC4))) %>%
+  slice(1:10) %>%
+  select(Feature, PC4)
+
+# Identify top 10 features driving PC5
+top_features_PC5 <- loadings %>%
+  arrange(desc(abs(PC5))) %>%
+  slice(1:10) %>%
+  select(Feature, PC5)
+
 # Print the top features for each PC
 list(
   Top_10_PC1 = top_features_PC1,
@@ -231,15 +243,12 @@ list(
 PC1_features<- as.numeric(top_features_PC1$Feature)
 PC2_features<- as.numeric(top_features_PC2$Feature)
 PC3_features<- as.numeric(top_features_PC3$Feature)
+PC4_features<- as.numeric(top_features_PC4$Feature)
+PC5_features<- as.numeric(top_features_PC5$Feature)
 
 
 
 ###############################################################
-library(ggplot2)
-library(viridis)
-library(tidyr)
-
-
 library(ggplot2)
 library(viridis)
 library(tidyr)
@@ -292,31 +301,51 @@ print(feature_plot)
 # Export as a long PDF
 ggsave("Figures/feature_plot.pdf", feature_plot, width = 16, height = 11, units = "in") # Adjusted height for 5 panels
 
+library(NatParksPalettes)
 
+NatParksPalettes
+
+natparks.pals("Olympic")
+
+#choose the colors from the palette
+plotcolors <- natparks.pals("Saguaro", n = 6, type = "discrete")
+
+# Select specific colors based on the desired indices (1, 4, 6, 8, 10)
+plotcolors <- plotcolors[c(1, 2, 3, 4, 5)]
 
 
 ################# R Shiny exploration plot 
+# UI
+library(shiny)
+library(ggplot2)
+library(dplyr)
+
+# UI
 ui <- fluidPage(
   titlePanel("PCA Analysis Viewer"),
+  # Define the landing page section with an image
+  div(
+    class = "landing-page",
+    tags$img(src = "landing_image.jpg", height = "80%", width = "80%"),
+    tags$h2("Welcome to the PCA Analysis Viewer"),
+    tags$p("Explore the PCA plot and click to view detailed Iso vs. Distance data for each Fish ID."),
+    style = "text-align: center; margin-top: 100px;"
+  ),
+  
   sidebarLayout(
     sidebarPanel(
+      width = 6,
       helpText("Click on a point in the PCA plot to view Iso vs. Distance for that Fish ID."),
       helpText("Drag to zoom in on the PCA plot."),
       selectInput("xComp", "X Component:", choices = names(pca_results), selected = "PC1"),
       selectInput("yComp", "Y Component:", choices = names(pca_results), selected = "PC2"),
-      sliderInput("natalOriginRange", "Filter Natal Origin Range:",
-                  min = min(pca_results$Natal_iso), max = max(pca_results$Natal_iso),
-                  value = range(pca_results$Natal_iso), step = 0.0001),
       actionButton("resetZoom", "Reset Zoom"),
-      actionButton("applyFilter", "Apply Filter")
+      tags$div(style = "margin-top: 130px;", plotOutput("featurePlot"))  # Add space with margin-top
     ),
     mainPanel(
+      width = 6, 
       plotOutput("pcaPlot", click = "pcaClick", brush = brushOpts(id = "pcaBrush", resetOnNew = TRUE)),
-      plotOutput("isoPlot"),
-      tabsetPanel(
-        tabPanel("Variance Summary", tableOutput("varianceTable")),
-        tabPanel("Top Features", tableOutput("topFeaturesTable"))
-      )
+      plotOutput("isoPlot")
     )
   )
 )
@@ -327,13 +356,6 @@ server <- function(input, output, session) {
   # Reactive values for filtered PCA data and zoom region
   filteredPCA <- reactiveVal(pca_results)
   zoomRegion <- reactiveValues(x = NULL, y = NULL)
-  
-  # Apply natal origin filter
-  observeEvent(input$applyFilter, {
-    filtered <- pca_results %>%
-      filter(Natal_iso >= input$natalOriginRange[1], Natal_iso <= input$natalOriginRange[2])
-    filteredPCA(filtered)
-  })
   
   # Reset zoom when the reset button is clicked
   observeEvent(input$resetZoom, {
@@ -368,6 +390,10 @@ server <- function(input, output, session) {
       )
   })
   
+  output$featurePlot <- renderPlot({
+    feature_plot  # Render the saved ggplot object
+  })
+  
   # Reactive value to store the selected Fish ID
   selectedFish <- reactiveVal()
   
@@ -397,41 +423,49 @@ server <- function(input, output, session) {
       mutate(MovingAvg = zoo::rollapply(Iso, width = 60, FUN = mean, fill = NA, align = "center"))
     
     # Combine all PC feature values and assign colors
-    pc_features <- c(PC1_features, PC2_features, PC3_features)
-    feature_colors <- c(rep("red", length(PC1_features)), 
-                        rep("green", length(PC2_features)), 
-                        rep("blue", length(PC3_features)))
+    # Combine all PC feature values and assign colors
+    pc_features <- c(PC1_features, PC2_features, PC3_features, PC4_features, PC5_features)
+    feature_colors <- c(rep(plotcolors[1], length(PC1_features)), 
+                        rep(plotcolors[2], length(PC2_features)), 
+                        rep(plotcolors[3], length(PC3_features)),
+                        rep(plotcolors[4], length(PC4_features)),
+                        rep(plotcolors[5], length(PC5_features)))
+    
+    # Create a dataframe for PC feature lines to map colors to labels
+    pc_df <- tibble(
+      Feature = factor(c(rep("PC1", length(PC1_features)),
+                         rep("PC2", length(PC2_features)),
+                         rep("PC3", length(PC3_features)),
+                         rep("PC4", length(PC4_features)),
+                         rep("PC5", length(PC5_features)))),
+      Value = c(PC1_features, PC2_features, PC3_features, PC4_features, PC5_features),
+      Color = c(rep(plotcolors[1], length(PC1_features)),
+                rep(plotcolors[2], length(PC2_features)),
+                rep(plotcolors[3], length(PC3_features)),
+                rep(plotcolors[4], length(PC4_features)),
+                rep(plotcolors[5], length(PC5_features)))
+    )
+    
     
     # Plot Iso vs Distance with moving average and horizontal lines
     ggplot(isoData, aes(x = Distance, y = Iso)) +
       geom_point(alpha = 0.5) +
       geom_line(aes(y = MovingAvg), color = "blue", size = 1) +
-      geom_vline(xintercept = pc_features, color = feature_colors) +
+      geom_vline(data = pc_df, aes(xintercept = Value, color = Feature)) +
       geom_hline(yintercept = 0.7092, color = "gold") +
-      theme_classic() +
+      theme_grey() +
       labs(title = paste("Iso vs. Distance for Fish ID:", selectedFish()),
            x = "Distance",
-           y = "Iso")
-  })
-  
-  # Render Variance Summary Table
-  output$varianceTable <- renderTable({
-    tibble(
-      Principal_Component = paste0("PC", seq_along(proportion_variance)),
-      Variance_Explained = round(proportion_variance, 3),
-      Cumulative_Variance = round(cumulative_variance, 3)
-    )
-  })
-  
-  # Render Top Features Table
-  output$topFeaturesTable <- renderTable({
-    bind_rows(
-      top_features_PC1 %>% mutate(PC = "PC1"),
-      top_features_PC2 %>% mutate(PC = "PC2"),
-      top_features_PC3 %>% mutate(PC = "PC3")
-    )
+           y = "Iso") +
+      scale_color_manual(values = setNames(plotcolors, c("PC1", "PC2", "PC3", "PC4", "PC5")),
+                         name = "PC Features") +
+      theme(legend.title = element_text(size = 12), 
+            legend.text = element_text(size = 10)) +
+      guides(color = guide_legend(override.aes = list(size = 5, shape = 16)))  # Change shape to point
   })
 }
 
 # Run the App
 shinyApp(ui, server)
+
+
