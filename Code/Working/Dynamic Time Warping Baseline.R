@@ -7,7 +7,7 @@ library(proxy)
 library(pheatmap)
 
 # Step 1: Load the data
-All_Data <- read.csv("Data/Intermediate/PCA_data.csv")
+All_Data <- read.csv("Data/Processed/PCA_data.csv")
 
 #Extract the metadata 
 Fish_ids <- All_Data$Fish_id
@@ -21,7 +21,7 @@ Distance_matrix <- dtw_lb(All_Data,
                           window.size = 100)
 
 Distance_matrix<- as.matrix(Distance_matrix)
-write.csv(as.matrix(Distance_matrix), "Data/Intermediate/DTW_distance_matrix.csv")  # Save the matrix
+write.csv(as.matrix(Distance_matrix), "Data/Processed/DTW_distance_matrix.csv")  # Save the matrix
 
 
 
@@ -64,18 +64,48 @@ confusion_matrix <- table(Nearest_Watershed, Watershed)
 # show confusion matrix in numbers 
 confusion_matrix
 
-
-
 ############### 
-# Read in the dtw data 
+library(dplyr)
+library(dtwclust)
+library(proxy)
+library(pheatmap)
+library(RColorBrewer)
+
+# Load Distance Matrix
 Distance_matrix <- read.csv("Data/Processed/DTW_distance_matrix.csv", row.names = 1)
+All_Data <- read.csv("Data/Processed/PCA_data.csv")
 Distance_matrix <- as.matrix(Distance_matrix)
-heatmap(Distance_matrix)
 
+# Ensure column names match row names
+colnames(Distance_matrix) <- rownames(Distance_matrix)
 
+# Ensure Watershed vector matches row order
+Watershed <- All_Data$Watershed
+names(Watershed) <- rownames(Distance_matrix)
 
+# Replace Inf values with a high value (e.g., max non-Inf value)
+max_dist <- max(Distance_matrix[is.finite(Distance_matrix)])
+Distance_matrix[is.infinite(Distance_matrix)] <- max_dist
 
+# Create annotation dataframes for both rows and columns
+annotation_row <- data.frame(Watershed = Watershed, row.names = rownames(Distance_matrix))
+annotation_col <- data.frame(Watershed = Watershed, row.names = colnames(Distance_matrix))
 
+# Define colors for Watershed classes
+ann_colors <- list(Watershed = c("Yukon" = "steelblue", "Kusko" = "tomato", "Nush" = "green"))
 
+all(colnames(Distance_matrix) == rownames(Distance_matrix))
 
-
+str(annotation_col)
+any(is.na(annotation_col))
+x
+# Plot heatmap with annotations on both axes
+pheatmap(Distance_matrix, 
+         annotation_row = annotation_row, 
+         annotation_col = annotation_col, 
+         annotation_colors = ann_colors,
+         clustering_distance_rows = "euclidean", 
+         clustering_distance_cols = "euclidean", 
+         clustering_method = "complete",  # Clustering by similarity
+         show_rownames = FALSE, 
+         show_colnames = FALSE)

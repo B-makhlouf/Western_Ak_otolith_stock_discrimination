@@ -126,8 +126,10 @@ write.csv(all_data, "Data/Processed/PCA_data.csv")
 all_data<- read.csv("Data/Processed/PCA_data.csv")
 
 # Extract metadata
-#metadata_filtered<- all_data[,1:4]
-#measurement_array_filtered<- all_data[-c(1:4)]
+metadata_filtered<- all_data[,1:4]
+measurement_array_filtered<- all_data[-c(1:4)]
+
+ids<- metadata_filtered$Fish_id
 
 # Run PCA
 results <- prcomp(measurement_array_filtered, scale. = TRUE)
@@ -369,13 +371,6 @@ library(dplyr)
 ui <- fluidPage(
   titlePanel("PCA Analysis Viewer"),
   # Define the landing page section with an image
-  div(
-    class = "landing-page",
-    tags$img(src = "landing_image.jpg", height = "80%", width = "80%"),
-    tags$h2("Welcome to the PCA Analysis Viewer"),
-    tags$p("Explore the PCA plot and click to view detailed Iso vs. Distance data for each Fish ID."),
-    style = "text-align: center; margin-top: 100px;"
-  ),
   
   sidebarLayout(
     sidebarPanel(
@@ -460,7 +455,7 @@ server <- function(input, output, session) {
     # Retrieve Iso data for the selected Fish ID
     isoData <- tibble(
       Distance = seq_along(measurement_array[fishIndex, ]),
-      Iso = measurement_array[fishIndex, ]
+      Iso = measurement_array_filtered[fishIndex, ]
     )
     
     # Calculate moving average

@@ -35,13 +35,12 @@ rf_model <- train(
   importance = TRUE
 )
 
-
 print(rf_model)
 importance <- varImp(rf_model, scale = TRUE)
 print(importance)
 plot(importance, top = 10, main = "Variable Importance (Random Forest)")
 
-#Plot it in a sequence of highest importance 
+
 
 rf_predictions <- predict(rf_model, testData)
 confMatrix_rf <- confusionMatrix(rf_predictions, testData$Watershed)
@@ -74,42 +73,10 @@ confMatrix_svm <- confusionMatrix(svm_predictions, testData$Watershed)
 print(confMatrix_svm)
 
 
-#train################ 
+
 ################ ASESSING PREFORMANCE 
 ################
 
-
-# Extract accuracies from confusion matrices
-accuracy_data <- data.frame(
-  Classifier = c("Random Forest", "KNN", "SVM"),
-  Accuracy = c(
-    confMatrix_rf$overall["Accuracy"],
-    confMatrix_knn$overall["Accuracy"],
-    confMatrix_svm$overall["Accuracy"]
-  )
-)
-
-# Create a bar graph of accuracy
-# Define manual colors for each classifier
-accuracy_data$Color <- c("steelblue", "darkseagreen3", "firebrick")
-
-# Create a bar graph of accuracy with manually assigned colors
-accuracy_plot <- ggplot(accuracy_data, aes(x = Classifier, y = Accuracy, fill = Classifier)) +
-  geom_bar(stat = "identity", color = "black", alpha = .8) +
-  scale_fill_manual(values = accuracy_data$Color) +
-  theme_grey() +
-  labs(
-    title = "Classifier Accuracy Comparison (on testing data)",
-    x = "Classifier",
-    y = "Accuracy"
-  ) +
-  scale_y_continuous(limits = c(0, 1), expand = c(0, 0)) +
-  theme(
-    axis.text.x = element_text(angle = 45, hjust = 1),
-    legend.position = "none"
-  )
-
-print(accuracy_plot)
 
 # Compile confusion matrices
 conf_matrix_list <- list(
@@ -123,7 +90,6 @@ for (name in names(conf_matrix_list)) {
   cat("\nConfusion Matrix for", name, ":\n")
   print(conf_matrix_list[[name]])
 }
-
 
 All_Data$Fish_id <- Fish_ids
 All_Data$Natal_iso<- Natal_iso
@@ -148,9 +114,7 @@ rf_results <- create_classification_results(rf_predictions, testData$Watershed, 
 
 # Add natal iso to the results by matching fish id to ALL data
 rf_results$Natal_iso <- All_Data$Natal_iso[match(rf_results$fish_id, All_Data$Fish_id)]
-
 write.csv(rf_results, "Data/Model Results/testing/RF_classification_results.csv", row.names = FALSE)
-
 
 # For KNN
 knn_results <- create_classification_results(knn_predictions, testData$Watershed, testData$Fish_id)
@@ -216,9 +180,96 @@ svm_plot <- ggplot(svm_results, aes(x = Correctly_classified, y = Natal_iso, fil
 print(svm_plot)
 
 
-
 ## Show all 3 plots using cowplot 
 cowplot::plot_grid(rf_plot, knn_plot, svm_plot, nrow = 1)
+
+############### 
+
+# density plot of classified individuals by natal origin vs misclassified individuals by natal origin 
+
+rf_results$Model <- "Random Forest"
+knn_results$Model <- "KNN"
+svm_results$Model <- "SVM"
+
+# Combine the results into one data frame
+all_results <- rbind(rf_results, knn_results, svm_results)
+
+# Separate the correctly and incorrectly classified individuals
+correct_classified <- all_results[all_results$Correctly_classified == "Y", ]
+incorrect_classified <- all_results[all_results$Correctly_classified == "N", ]
+
+# Create a combined dataset for both correctly and incorrectly classified
+correct_classified$Classification <- "Correct"
+incorrect_classified$Classification <- "Incorrect"
+
+# Combine them into one dataframe
+combined_results <- rbind(correct_classified, incorrect_classified)
+
+# Create the density plot
+density_plot <- ggplot(combined_results, aes(x = Natal_iso, fill = Classification)) +
+  geom_density(alpha = 0.6) +  # Set transparency using alpha
+  scale_fill_manual(values = c("Correct" = "dodgerblue", "Incorrect" = "firebrick")) +  # Custom colors for correct/incorrect
+  labs(
+    title = "Density Plot of Natal Isotopes for Correctly vs Incorrectly Classified Fish",
+    x = "Natal Isotopes",
+    y = "Density"
+  ) +
+  theme_minimal()
+
+# Display the plot
+print(density_plot)
+
+
+stacked_bar_plot <- ggplot(combined_results, aes(x = Natal_iso, fill = Classification)) +
+  geom_bar(stat = "count", position = "stack", width = 0.7) +  # Stacked bar plot
+  scale_fill_manual(values = c("Correct" = "dodgerblue", "Incorrect" = "firebrick")) +  # Custom colors for correct/incorrect
+  labs(
+    title = "Count of Correctly vs Incorrectly Classified Fish by Natal Isotopes",
+    x = "Natal Isotopes",
+    y = "Count of Individuals"
+  ) +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))  # Rotate x-axis labels for better readability
+
+
+bin_breaks <- seq(0.703, 0.740, by = 0.001)
+combined_results$Natal_iso_bin <- cut(combined_results$Natal_iso, breaks = bin_breaks, include.lowest = TRUE, labels = FALSE)
+
+
+bin_table <- combined_results %>%
+  group_by(Natal_iso_bin, Classification) %>%
+  summarise(Count = n(), .groups = 'drop') %>%
+  spread(Classification, Count, fill = 0)
+
+bin_table$Natal_iso_bin <- sapply(bin_table$Natal_iso_bin, function(x) {
+  paste0(format(bin_breaks[x], digits = 3), "-", format(bin_breaks[x + 1], digits = 4))
+})
+
+bin_table$Total <- bin_table$Correct + bin_table$Incorrect
+bin_table$Proportion_Correct <- bin_table$Correct / bin_table$Total
+
+bin_table <- bin_table %>%
+  group_by(Natal_iso_bin) %>%
+  mutate(Total = Correct + Incorrect, 
+         Correct_Percentage = Correct / Total * 100)
+
+# Create the bar chart
+ggplot(bin_table, aes(x = Natal_iso_bin, y = Correct, fill = "Correct")) +
+  geom_bar(stat = "identity", position = "stack", show.legend = FALSE) +
+  geom_bar(aes(y = Incorrect, fill = "Incorrect"), stat = "identity", position = "stack", show.legend = FALSE) +
+  scale_fill_manual(values = c("Correct" = "dodgerblue3", "Incorrect" = "#E7B800")) +
+  labs(
+    title = "Total Number of Individuals in Each Bin and Their Classification",
+    x = "Natal Iso Bin",
+    y = "Count"
+  ) +
+  geom_text(aes(y = Correct + Incorrect, label = paste0(round(Correct_Percentage, 1), "%")), 
+            position = position_stack(vjust = .5), color = "white", angle = 90) +
+  theme_grey() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1)) +
+  scale_y_continuous(expand = c(0, 0))
+
+
 
 #### 
 
