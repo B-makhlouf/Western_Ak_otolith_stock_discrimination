@@ -4,88 +4,94 @@ library(here)
 library(shiny)
 library(viridis)
 
-# Directory containing files
-data_directory <- here("Data/Processed/Trim_Locations")
-files <- list.files(data_directory, full.names = TRUE)
-
-# Initialize an empty list to store results
-results_list <- list()
-
-
-# Loop through each file
-for (file_path in files) {
-  cat("\nProcessing file:", file_path, "\n")  # Debugging output
+process_trimmed_data <- function(interp_points = 1000, microns_before = 250, microns_after = 400) {
+  library(tidyverse)
+  library(here)
   
-  # Read the data
-  ind_data <- tryCatch({
-    read_csv(file_path)
-  }, error = function(e) {
-    cat("Error reading file:", e$message, "\n")
-    return(NULL)
-  })
+  data_directory <- here("Data/Processed/Trim_Locations")
+  files <- list.files(data_directory, full.names = TRUE)
+  results_list <- list()
   
-  if (is.null(ind_data)) next  # Skip to the next file if read_csv fails
+  for (file_path in files) {
+    cat("\nProcessing file:", file_path, "\n")  # Debugging output
+    
+    ind_data <- tryCatch({
+      read_csv(file_path)
+    }, error = function(e) {
+      cat("Error reading file:", e$message, "\n")
+      return(NULL)
+    })
+    
+    if (is.null(ind_data)) next  # Skip to the next file if read_csv fails
+    
+    # Extract metadata
+    watershed <- ind_data$Watershed[1]
+    natal_iso <- ind_data$natal_origin_iso[1]
+    fish_id <- ind_data$Fish_id[1]
+    natal_iso_start <- ind_data$natal_microns_start[1]
+    natal_iso_end <- ind_data$natal_microns_end[1]
+    marine_start <- ind_data$marine_start[1]
+    
+    # Trim the data
+    ind_data <- ind_data %>%
+      filter(Microns >= (natal_iso_start - microns_before) & Microns <= (marine_start + microns_after))
+    
+    # Interpolate Iso values
+    interpolated <- tryCatch({
+      if (nrow(ind_data) < 2 || all(is.na(ind_data$Iso))) {
+        rep(NA, interp_points)
+      } else {
+        approx(
+          x = seq_along(ind_data$Iso),
+          y = ind_data$Iso,
+          xout = seq(1, nrow(ind_data), length.out = interp_points),
+          method = "linear",
+          rule = 2
+        )$y
+      }
+    }, error = function(e) {
+      cat("Error in interpolation:", e$message, "\n")
+      return(rep(NA, 1000))
+    })
+    
+    # Store results
+    results_list[[file_path]] <- tibble(
+      Fish_id = fish_id,
+      Watershed = watershed,
+      Iso = list(interpolated), 
+      Natal_Iso = natal_iso,
+      Natal_Iso_Start = natal_iso_start,
+      Natal_Iso_End = natal_iso_end,
+      Marine_Start = marine_start
+    )
+  }
   
-
-  # Extract metadata and debug
-  watershed <- ind_data$Watershed[1]
-  natal_iso <- ind_data$natal_origin_iso[1]
-  fish_id <- ind_data$Fish_id[1]
-  natal_iso_start <- ind_data$natal_microns_start[1]
-  natal_iso_end <- ind_data$natal_microns_end[1]
-  marine_start <- ind_data$marine_start[1]
+  # Combine results into a single tibble
+  combined_results <- bind_rows(results_list, .id = "Dataset")
   
-  # Trim the data between natal_iso_start and marine_start 
-  ind_data <- ind_data %>%
-    filter(Microns >= (natal_iso_start - 250)  & Microns <= (marine_start + 400))
-  
-  # Interpolate Iso values
-  interpolated <- tryCatch({
-    if (nrow(ind_data) < 2 || all(is.na(ind_data$Iso))) {
-      rep(NA, 1000)
-    } else {
-      approx(
-        x = seq_along(ind_data$Iso),
-        y = ind_data$Iso,
-        xout = seq(1, nrow(ind_data), length.out = 1000),
-        method = "linear",
-        rule = 2
-      )$y
-    }
-  }, error = function(e) {
-    cat("Error in interpolation:", e$message, "\n")
-    return(rep(NA, 1000))
-  })
-  
-  # Save the results
-  results_list[[file_path]] <- tibble(
-    Fish_id = fish_id,
-    Watershed = watershed,
-    Iso = list(interpolated), 
-    Natal_Iso = natal_iso,
-    Natal_Iso_Start = natal_iso_start,
-    Natal_Iso_End = natal_iso_end,
-    Marine_Start = marine_start
-  )
-}
-
-  
-# Combine results into a single tibble
-combined_results <- bind_rows(results_list, .id = "Dataset")
-  
-# Remove rows with all NA in the Iso column
+  # Remove rows with all NA in the Iso column
   filtered_results <- combined_results %>%
     filter(map_lgl(Iso, ~ !all(is.na(.))))
   
-# Create a measurement array from the Iso values
-measurement_array <- do.call(cbind, filtered_results$Iso)
-measurement_array <- t(measurement_array) #transpose
+  # Create a measurement array
+  measurement_array <- do.call(cbind, filtered_results$Iso)
+  measurement_array <- t(measurement_array) # Transpose
   
-# Extract metadata
-ids <- filtered_results$Fish_id
-watersheds <- filtered_results$Watershed
-natal_origins<- filtered_results$Natal_Iso
+  # Extract metadata
+  ids <- filtered_results$Fish_id
+  watersheds <- filtered_results$Watershed
+  natal_origins <- filtered_results$Natal_Iso
+  
+  list(
+    data = filtered_results,
+    measurement_array = measurement_array,
+    ids = ids,
+    watersheds = watersheds,
+    natal_origins = natal_origins
+  )
+}
 
+result <- process_trimmed_data(here("Data/Processed/Trim_Locations"))
 
 
 #############################################################################
@@ -120,7 +126,7 @@ all_data<- cbind(metadata_filtered, measurement_array_filtered)
 write.csv(all_data, "Data/Processed/PCA_data.csv")
 
 
-
+#############################################################################
 
 # Read in the latest version of PCA_data.csv 
 all_data<- read.csv("Data/Processed/PCA_data.csv")
@@ -130,9 +136,11 @@ metadata_filtered<- all_data[,1:4]
 measurement_array_filtered<- all_data[-c(1:4)]
 
 ids<- metadata_filtered$Fish_id
-
 # Run PCA
 results <- prcomp(measurement_array_filtered, scale. = TRUE)
+
+
+
 pca_scores <- as.data.frame(results$x)
 
 # Combine PCA scores with metadata
@@ -196,6 +204,11 @@ variance_summary <- tibble(
 )
 print(variance_summary)
 }
+
+
+
+
+
 ########## determine the features loading on each of the PCAs 
 
 if (T){
@@ -240,13 +253,6 @@ list(
 )
 } 
 
-# Extract the top 10 features into a vector
-
-PC1_features<- as.numeric(top_features_PC1$Feature)
-PC2_features<- as.numeric(top_features_PC2$Feature)
-PC3_features<- as.numeric(top_features_PC3$Feature)
-PC4_features<- as.numeric(top_features_PC4$Feature)
-PC5_features<- as.numeric(top_features_PC5$Feature)
 
 
 
@@ -345,7 +351,55 @@ print(feature_plot)
 ggsave("Figures/feature_plot.pdf", feature_plot, width = 16, height = 11, units = "in") # Adjusted height for 5 panels
 
 
+if (T){
+  loadings <- as.data.frame(results$rotation)
+  loadings$Feature <- rownames(loadings)
+  
+  # Identify top 10 features driving PC1
+  top_features_PC1 <- loadings %>%
+    arrange(desc(abs(PC1))) %>%
+    slice(1:10) %>%
+    select(Feature, PC1)
+  
+  # Identify top 10 features driving PC2
+  top_features_PC2 <- loadings %>%
+    arrange(desc(abs(PC2))) %>%
+    slice(1:10) %>%
+    select(Feature, PC2)
+  
+  # Identify top 10 features driving PC3
+  top_features_PC3 <- loadings %>%
+    arrange(desc(abs(PC3))) %>%
+    slice(1:10) %>%
+    select(Feature, PC3)
+  
+  # Identify top 10 features driving PC4
+  top_features_PC4 <- loadings %>%
+    arrange(desc(abs(PC4))) %>%
+    slice(1:10) %>%
+    select(Feature, PC4)
+  
+  # Identify top 10 features driving PC5
+  top_features_PC5 <- loadings %>%
+    arrange(desc(abs(PC5))) %>%
+    slice(1:10) %>%
+    select(Feature, PC5)
+  
+  # Print the top features for each PC
+  list(
+    Top_10_PC1 = top_features_PC1,
+    Top_10_PC2 = top_features_PC2,
+    Top_10_PC3 = top_features_PC3
+  )
+} 
 
+# Extract the top 10 features into a vector
+
+PC1_features<- top_features_PC1$Feature
+PC2_features<- top_features_PC2$Feature
+PC3_features<- top_features_PC3$Feature
+PC4_features<- top_features_PC4$Feature
+PC5_features<- top_features_PC5$Feature
 
 
 library(NatParksPalettes)

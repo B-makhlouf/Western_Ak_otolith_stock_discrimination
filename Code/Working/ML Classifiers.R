@@ -1,6 +1,8 @@
 library(dplyr)
 library(caret)
 library(ggplot2)
+library(dplyr)
+library(tidyr)
 
 # Load the data
 All_Data <- read.csv("Data/Processed/PCA_data.csv")
@@ -232,7 +234,7 @@ stacked_bar_plot <- ggplot(combined_results, aes(x = Natal_iso, fill = Classific
   theme(axis.text.x = element_text(angle = 45, hjust = 1))  # Rotate x-axis labels for better readability
 
 
-bin_breaks <- seq(0.703, 0.740, by = 0.001)
+bin_breaks <- seq(0.703, 0.740, by = 0.0005)
 combined_results$Natal_iso_bin <- cut(combined_results$Natal_iso, breaks = bin_breaks, include.lowest = TRUE, labels = FALSE)
 
 
@@ -270,14 +272,3 @@ ggplot(bin_table, aes(x = Natal_iso_bin, y = Correct, fill = "Correct")) +
   scale_y_continuous(expand = c(0, 0))
 
 
-
-#### 
-
-# Check to see if there are individuals which were misclassified for both random forest and svm 
-misclassified_fish <- intersect(rf_results$fish_id[rf_results$Correctly_classified == "N"], svm_results$fish_id[svm_results$Correctly_classified == "N"])
-
-# Filter the original data to only include these fish
-misclassified_data_BOTH <- All_Data[All_Data$Fish_id %in% misclassified_fish, ]
-
-
-print(misclassified_fish)

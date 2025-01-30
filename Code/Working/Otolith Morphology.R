@@ -39,7 +39,7 @@ pca_results<- as.data.frame(pca$x)
 pca_results$Watershed<- labels
 
 # remove those individuals with a pc2 of less than -8 OR a pc1 of less than -20
-pca_results<- pca_results[!(pca_results$PC2 < -8 | pca_results$PC1 < -20),]
+pca_results<- pca_results[!(pca_results$PC1 < -20 | pca_results$PC1 > 20) | pca_results$PC2> 40,]
 
 # Plot principal component 1 vs 2 and color by labels 
 ggplot(pca_results, aes(x = PC1, y = PC2, color = Watershed)) +
@@ -85,7 +85,7 @@ labels_all <- labels
 set.seed(123)
 
 # Split data into training (80%) and testing (20%)
-trainIndex <- createDataPartition(labels_all, p = 0.6, list = FALSE)
+trainIndex <- createDataPartition(labels_all, p = 0.8, list = FALSE)
 wavelet_train <- wavelet_all[trainIndex, ]
 wavelet_test <- wavelet_all[-trainIndex, ]
 labels_train <- labels_all[trainIndex]
