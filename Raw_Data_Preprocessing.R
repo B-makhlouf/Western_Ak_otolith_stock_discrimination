@@ -1,9 +1,4 @@
 
-
-
-
-
-
 #### This function takes all the raw data files in the Tim_Locations folder (which have been given a trim location)
 # And processes them to be used in Classifier, PCA, DTW, etc. 
 
@@ -34,7 +29,6 @@ process_trimmed_data <- function(interp_points = 1000, microns_before = 250, mic
     natal_iso_start <- ind_data$natal_microns_start[1]
     natal_iso_end <- ind_data$natal_microns_end[1]
     marine_start <- ind_data$marine_start[1]
-    Year<- ind_data$Year[1]
     
     # Trim the data
     ind_data <- ind_data %>%
@@ -64,7 +58,9 @@ process_trimmed_data <- function(interp_points = 1000, microns_before = 250, mic
       Watershed = watershed,
       Iso = list(interpolated), 
       Natal_Iso = natal_iso,
-      Year = Year
+      Natal_Iso_Start = natal_iso_start,
+      Natal_Iso_End = natal_iso_end,
+      Marine_Start = marine_start
     )
   }
   
@@ -83,13 +79,12 @@ process_trimmed_data <- function(interp_points = 1000, microns_before = 250, mic
   ids <- filtered_results$Fish_id
   watersheds <- filtered_results$Watershed
   natal_origins <- filtered_results$Natal_Iso
-  years = filtered_results$Year
   
   list(
+    data = filtered_results,
     measurement_array = measurement_array,
     ids = ids,
     watersheds = watersheds,
-    natal_origins = natal_origins,
-    Year = years
+    natal_origins = natal_origins
   )
 }

@@ -70,10 +70,6 @@ output_dir <- here("Data/Processed/Trim_Locations/Diagnostic_Plots")
 la_data_dir <- here("Data/Processed/Trim_Locations")
 
 
-
-
-
-
 # # 2014 Nushagak 
 data_dir <- here("Data/Raw/LA Data/2014 Nush")
 metadata_path <- here("/Users/benjaminmakhlouf/Research_repos/Western_Ak_otolith_stock_discrimination/Data/Final/Extracted Natal Origins/2014 Nushagak_Cleaned_Natal_Origins.csv")
