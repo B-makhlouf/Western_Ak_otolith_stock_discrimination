@@ -54,7 +54,8 @@ final_results <- bind_rows(rf_results, knn_results, svm_results)
 # Print final results
 print(final_results)
 
-
+## Save rf_results 
+write.csv(rf_results, "Data/Model Results/testing/rf_results.csv", row.names = FALSE)
 
 
 

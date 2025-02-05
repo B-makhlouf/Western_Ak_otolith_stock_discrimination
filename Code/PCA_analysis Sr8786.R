@@ -14,8 +14,6 @@ source(here("/Users/benjaminmakhlouf/Research_repos/Western_Ak_otolith_stock_dis
 processed_data<-process_trimmed_data()
 
 
-
-
 ###############################################################################
 
 # Pull out the metadata and measurement array from the processed data
@@ -64,21 +62,35 @@ feature_figure<- plot_pca_loadings(PCA_raw, plot_type = "line")
 plot(feature_figure)
 
 
+###########################################################
+
+### Read in most recent ML classifier success 
+rf_results<- read.csv(here("/Users/benjaminmakhlouf/Research_repos/Western_Ak_otolith_stock_discrimination/Data/Model Results/testing/rf_results.csv"))
+
+
+
+
+
+
 ################# R Shiny exploration plot 
+
+library(shiny)
+library(ggplot2)
+library(dplyr)
+library(zoo)
 
 # UI
 ui <- fluidPage(
   titlePanel("PCA Analysis Viewer"),
-
+  
   sidebarLayout(
     sidebarPanel(
       width = 6,
       helpText("Click on a point in the PCA plot to view Iso vs. Distance for that Fish ID."),
-      helpText("Drag to zoom in on the PCA plot."),
       selectInput("xComp", "X Component:", choices = names(PCA_full), selected = "PC1"),
       selectInput("yComp", "Y Component:", choices = names(PCA_full), selected = "PC2"),
       actionButton("resetZoom", "Reset Zoom"),
-      tags$div(style = "margin-top: 130px;", plotOutput("featurePlot"))  # Add space with margin-top
+      actionButton("toggleColor", "Toggle Coloring Scheme")  # Button to toggle coloring
     ),
     mainPanel(
       width = 6, 
@@ -91,74 +103,93 @@ ui <- fluidPage(
 # Server
 server <- function(input, output, session) {
   
-  # Reactive values for filtered PCA data and zoom region
-  filteredPCA <- reactiveVal(PCA_full)
+  # Merge PCA data with classification results
+  PCA_full <- left_join(PCA_full, rf_results, by = c("Fish_id" = "ID"))
+  
+  # Create classification color mapping
+  PCA_full$Classified_Color <- ifelse(PCA_full$Correct_Classified == "Yes", "green", "red")
+  PCA_full$Classified_Color[is.na(PCA_full$Correct_Classified)] <- "grey"
+  
+  # Reactive values for zoom regions
   zoomRegion <- reactiveValues(x = NULL, y = NULL)
   
-  # Reset zoom when the reset button is clicked
+  # Reactive value to track the current coloring scheme
+  coloringScheme <- reactiveVal("Watershed")  # Default to Watershed
+  
+  # Toggle coloring scheme when the button is clicked
+  observeEvent(input$toggleColor, {
+    if (coloringScheme() == "Watershed") {
+      coloringScheme("Classification")
+    } else {
+      coloringScheme("Watershed")
+    }
+  })
+  
   observeEvent(input$resetZoom, {
     zoomRegion$x <- NULL
     zoomRegion$y <- NULL
   })
   
-  # Observe brush input for zoom
   observeEvent(input$pcaBrush, {
     brush <- input$pcaBrush
     if (!is.null(brush)) {
       zoomRegion$x <- c(brush$xmin, brush$xmax)
       zoomRegion$y <- c(brush$ymin, brush$ymax)
-    } else {
-      zoomRegion$x <- NULL
-      zoomRegion$y <- NULL
     }
   })
   
-  # Render PCA Plot with filtering and zoom
+  # PCA plot with dynamic coloring
   output$pcaPlot <- renderPlot({
-    ggplot(filteredPCA(), aes_string(x = input$xComp, y = input$yComp, color = "Watershed")) +
-      geom_point(size = 2, alpha = 0.4) +
-      theme_classic() +
-      labs(title = "PCA of Iso Values by Watershed",
-           x = input$xComp,
-           y = input$yComp) +
-      theme(legend.title = element_blank()) +
-      coord_cartesian(
-        xlim = zoomRegion$x,
-        ylim = zoomRegion$y
-      )
+    if (coloringScheme() == "Watershed") {
+      ggplot(PCA_full, aes_string(x = input$xComp, y = input$yComp, color = "Watershed")) +
+        geom_point(size = 2, alpha = 0.4) +
+        theme_classic() +
+        labs(title = "PCA of Iso Values by Watershed",
+             x = input$xComp,
+             y = input$yComp) +
+        theme(legend.title = element_blank()) +
+        coord_cartesian(xlim = zoomRegion$x, ylim = zoomRegion$y)
+    } else {
+      ggplot(PCA_full, aes_string(x = input$xComp, y = input$yComp, color = "Classified_Color")) +
+        geom_point(size = 2, alpha = 0.6) +
+        scale_color_identity() +
+        theme_classic() +
+        labs(title = "PCA of Iso Values by Classification Accuracy",
+             x = input$xComp,
+             y = input$yComp) +
+        theme(legend.position = "none") +
+        coord_cartesian(xlim = zoomRegion$x, ylim = zoomRegion$y)
+    }
   })
   
-  
   # Reactive value to store the selected Fish ID
-  selectedFish <- reactiveVal()
+  selectedFish <- reactiveVal(NULL)
   
-  # Update selected Fish ID based on click
+  # Update selectedFish when clicking in the PCA plot
   observeEvent(input$pcaClick, {
-    nearPoint <- nearPoints(filteredPCA(), input$pcaClick, threshold = 5, maxpoints = 1)
+    nearPoint <- nearPoints(PCA_full, input$pcaClick, threshold = 5, maxpoints = 1)
     if (nrow(nearPoint) > 0) {
       selectedFish(nearPoint$Fish_id[1])
     }
   })
   
-  # Render Iso Plot for selected Fish ID
+  # Iso plot for selected Fish ID
   output$isoPlot <- renderPlot({
-    req(selectedFish())
+    req(selectedFish())  # Ensure a Fish ID is selected
     
     # Find the index of the selected Fish ID
     fishIndex <- which(metadata_filtered$Fish_id == selectedFish())
     
-    # Retrieve Iso data for the selected Fish ID
+    if (length(fishIndex) == 0) return(NULL)  # If no valid index, exit
+    
+    # Extract Iso data
     isoData <- tibble(
       Distance = seq_along(measurement_array_filtered[fishIndex, ]),
       Iso = measurement_array_filtered[fishIndex, ]
-    )
-    
-    # Calculate moving average
-    isoData <- isoData %>%
+    ) %>%
       mutate(MovingAvg = zoo::rollapply(Iso, width = 60, FUN = mean, fill = NA, align = "center"))
     
-
-    # Plot Iso vs Distance with moving average and horizontal lines
+    # Plot
     ggplot(isoData, aes(x = Distance, y = Iso)) +
       geom_point(alpha = 0.5) +
       geom_line(aes(y = MovingAvg), color = "blue", size = 1) +
@@ -166,14 +197,12 @@ server <- function(input, output, session) {
       theme_grey() +
       labs(title = paste("Iso vs. Distance for Fish ID:", selectedFish()),
            x = "Distance",
-           y = "Iso") +
-      theme(legend.title = element_text(size = 12), 
-            legend.text = element_text(size = 10)) +
-      guides(color = guide_legend(override.aes = list(size = 5, shape = 16)))  # Change shape to point
+           y = "Iso")
   })
 }
 
-# Run the App
-shinyApp(ui, server)
 
+
+# Run the application
+shinyApp(ui, server)
 
