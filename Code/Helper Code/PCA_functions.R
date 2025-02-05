@@ -4,7 +4,7 @@
 
 run_pca <- function(measurement_array_filtered, metadata_filtered) {
   # Run PCA
-  pca_scores <- as.data.frame(PCA_results_raw$x)
+  pca_scores <- as.data.frame(PCA_raw$x)
   
   # Combine PCA scores with metadata
   pca_results <- tibble(
@@ -62,9 +62,9 @@ pca_natal_plot <- function(PCA_full, pca_x = 1, pca_y = 2) {
 
 ### This function displays the feature importance along the timeseries, either as a "line" or a " bar graph" 
 
-plot_pca_loadings <- function(PCA_results_raw, plot_type = "line") {
+plot_pca_loadings <- function(PCA_raw, plot_type = "line") {
   # Prepare the loadings data
-  loadings <- as.data.frame(PCA_results_raw$rotation)
+  loadings <- as.data.frame(PCA_raw$rotation)
   loadings$Feature <- rownames(loadings)
   
   # Create a data frame from the matrix
