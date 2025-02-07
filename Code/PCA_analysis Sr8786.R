@@ -24,12 +24,23 @@ metadata <- tibble(
   Year = processed_data$Year
 )
 
-iso_data<- processed_data$measurement_array
+iso_data<- processed_data$measurement_array #Regular data 
+iso_data_MA<- processed_data$moving_avg_array # Moving average data
+iso_data_MA <- iso_data_MA[, colSums(is.na(iso_data_MA)) == 0]
 
-all_data_combined<- cbind(metadata, iso_data)
+# delete NA reads 
+
+
+iso_data_GAM<- processed_data$gam_smoothed_array # GAM smoothed data
+
+all_data_combined_raw<- cbind(metadata, iso_data) # combine the metadata and the raw data
+all_data_combined_MA<- cbind(metadata, iso_data_MA) # combine the metadata and the moving average data
+all_data_combined_GAM<- cbind(metadata, iso_data_GAM) # combine the metadata and the GAM smoothed data
 
 # save as a .csv 
-write.csv(all_data_combined, file = here("Data/Processed/all_data_combined.csv"))
+write.csv(all_data_combined, file = here("Data/Processed/all_data_combined_RAW.csv"))
+write.csv(all_data_combined_MA, file = here("Data/Processed/all_data_combined_MA.csv"))
+write.csv(all_data_combined_GAM, file = here("Data/Processed/all_data_combined_GAM.csv"))
 
 #FILTER 
 
@@ -48,8 +59,8 @@ measurement_array_filtered <- iso_data[selected_indices,]
 #############################################################################
 #################### PCA Exploration ########################################
 #############################################################################
-PCA_raw <- prcomp(measurement_array_filtered, scale. = TRUE) #run the pca 
-PCA_full<- run_pca(measurement_array_filtered, metadata_filtered) #add all the metadata
+PCA_raw <- prcomp(iso_data_GAM, scale. = TRUE) #run the pca 
+PCA_full<- run_pca(iso_data, metadata_filtered) #add all the metadata
 
 ### figures 
 
@@ -60,6 +71,24 @@ print(natalIsoPCAPlot)
 ### Feature importance
 feature_figure<- plot_pca_loadings(PCA_raw, plot_type = "line")
 plot(feature_figure)
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 ###########################################################
