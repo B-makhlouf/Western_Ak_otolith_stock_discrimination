@@ -4,13 +4,18 @@ library(here)
 library(shiny)
 library(viridis)
 library(shiny)
+library(shiny)
+library(ggplot2)
+library(dplyr)
+library(zoo)
 
 
-### Source in the function which does the data preprocessing. 
+
+# ### Source in the function which does the data preprocessing. 
 source(here("/Users/benjaminmakhlouf/Research_repos/Western_Ak_otolith_stock_discrimination/Code/Helper Code/Raw_Data_Preprocessing.R"))
 source(here("/Users/benjaminmakhlouf/Research_repos/Western_Ak_otolith_stock_discrimination/Code/Helper Code/PCA_functions.R"))
 
-# Run the function 
+# Run the function
 processed_data<-process_trimmed_data()
 
 
@@ -24,43 +29,63 @@ metadata <- tibble(
   Year = processed_data$Year
 )
 
-iso_data<- processed_data$measurement_array #Regular data 
+
+
+iso_data<- processed_data$measurement_array #Regular data
 iso_data_MA<- processed_data$moving_avg_array # Moving average data
 iso_data_MA <- iso_data_MA[, colSums(is.na(iso_data_MA)) == 0]
-
-# delete NA reads 
-
-
 iso_data_GAM<- processed_data$gam_smoothed_array # GAM smoothed data
 
 all_data_combined_raw<- cbind(metadata, iso_data) # combine the metadata and the raw data
 all_data_combined_MA<- cbind(metadata, iso_data_MA) # combine the metadata and the moving average data
 all_data_combined_GAM<- cbind(metadata, iso_data_GAM) # combine the metadata and the GAM smoothed data
 
-# save as a .csv 
-write.csv(all_data_combined, file = here("Data/Processed/all_data_combined_RAW.csv"))
+# save as a .csv
+write.csv(all_data_combined_raw, file = here("Data/Processed/all_data_combined_RAW.csv"))
 write.csv(all_data_combined_MA, file = here("Data/Processed/all_data_combined_MA.csv"))
 write.csv(all_data_combined_GAM, file = here("Data/Processed/all_data_combined_GAM.csv"))
 
-#FILTER 
+
+
+### READ IN ALL THREE 
+iso_data<- read.csv(here("Data/Processed/all_data_combined_RAW.csv"))
+iso_MA<- read.csv(here("Data/Processed/all_data_combined_MA.csv"))
+iso_MA <- iso_MA[, colSums(!is.na(iso_MA)) > 0]
+iso_GAM<- read.csv(here("Data/Processed/all_data_combined_GAM.csv"))
+
+iso_data<- all_data_combined_raw
+
+
+# metadata is the first 5 columns 
+metadata<- iso_data[,1:4]
+
+# remove the metadata columns from the data
+iso_data<- iso_data[,6:ncol(iso_data)]
+
+
+#FILTER
 
 #if you dont want to filter anything, just set selected_indices to 1:nrow(metadata)
 selected_indices <- 1:nrow(metadata)
 
 # otherwise you can filter here
-#selected_indices <- which(metadata$Year != )
+#selected_indices <- which((metadata$Natal_Iso >= 0.707 & metadata$Natal_Iso <= 0.7075))
 
 # Filter both
-metadata_filtered <- metadata[selected_indices,]
-measurement_array_filtered <- iso_data[selected_indices,]
+selected_metadata <- metadata[selected_indices,]
+selected_data <- iso_data[selected_indices,]
+
+# make a data frame 
+selected_data<- as.matrix(selected_data)
 
 
 #############################################################################
 #############################################################################
 #################### PCA Exploration ########################################
 #############################################################################
-PCA_raw <- prcomp(iso_data_GAM, scale. = TRUE) #run the pca 
-PCA_full<- run_pca(iso_data, metadata_filtered) #add all the metadata
+
+PCA_raw <- prcomp(selected_data, scale. = TRUE) #run the pca 
+PCA_full<- run_pca(selected_data, selected_metadata) #add all the metadata
 
 ### figures 
 
@@ -72,41 +97,58 @@ print(natalIsoPCAPlot)
 feature_figure<- plot_pca_loadings(PCA_raw, plot_type = "line")
 plot(feature_figure)
 
+##############################################################################################################
+
+# Machine learning classifier (RF)
+
+# Split the data into training and testing sets
+library(caret)
+set.seed(123)
+
+trainIndex <- createDataPartition(ModelData$Watershed, p = 0.8, list = FALSE)
+
+traindata<- selected_data[trainIndex,]
+trainmetadata<- selected_metadata[trainIndex,]
+testdata<- selected_data[-trainIndex,]
+testmetadata<- selected_metadata[-trainIndex,]
+control <- trainControl(method = "cv", number = 5)
+model <- train(Watershed ~ ., data = trainData, method = "rf", trControl = control)
+predictions <- predict(model, testData)
+predictions <- as.factor(predictions)
+testData$Watershed <- as.factor(testData$Watershed)
+conf_matrix <- confusionMatrix(predictions, testData$Watershed)
+conf_matrix
+fish_ids<- testmetadata$Fish_id
 
 
+create_classification_results <- function(predictions, actuals, fish_ids) {
+  result <- data.frame(
+    ID = fish_ids,
+    Correct_Classified = ifelse(predictions == actuals, "Yes", "No")
+  )
+  return(result)
+}
 
+# Applying the function correctly
+rf_results <- create_classification_results(predictions, testmetadata$Watershed, fish_ids)
 
+# Add natal iso to the results by matching fish id to ALL data
+rf_results$Natal_iso <- testmetadata$Natal_iso[match(rf_results$fish_id, testmetadata$Fish_id)]
 
+# Save results
+write.csv(rf_results, "Data/Model Results/testing/RF_classification_results.csv", row.names = FALSE)
 
+# Merge PCA data with classification results
+PCA_full <- left_join(PCA_full, rf_results, by = c("Fish_id" = "ID"))
 
-
-
-
-
-
-
-
-
-
-
-
-
-###########################################################
-
-### Read in most recent ML classifier success 
-rf_results<- read.csv(here("/Users/benjaminmakhlouf/Research_repos/Western_Ak_otolith_stock_discrimination/Data/Model Results/testing/rf_results.csv"))
-
-
-
+# Create classification color mapping
+PCA_full$Classified_Color <- ifelse(PCA_full$Correct_Classified == "Yes", "green", "red")
+PCA_full$Classified_Color[is.na(PCA_full$Correct_Classified)] <- "grey"
 
 
 
 ################# R Shiny exploration plot 
 
-library(shiny)
-library(ggplot2)
-library(dplyr)
-library(zoo)
 
 # UI
 ui <- fluidPage(
@@ -131,13 +173,6 @@ ui <- fluidPage(
 
 # Server
 server <- function(input, output, session) {
-  
-  # Merge PCA data with classification results
-  PCA_full <- left_join(PCA_full, rf_results, by = c("Fish_id" = "ID"))
-  
-  # Create classification color mapping
-  PCA_full$Classified_Color <- ifelse(PCA_full$Correct_Classified == "Yes", "green", "red")
-  PCA_full$Classified_Color[is.na(PCA_full$Correct_Classified)] <- "grey"
   
   # Reactive values for zoom regions
   zoomRegion <- reactiveValues(x = NULL, y = NULL)
@@ -207,14 +242,14 @@ server <- function(input, output, session) {
     req(selectedFish())  # Ensure a Fish ID is selected
     
     # Find the index of the selected Fish ID
-    fishIndex <- which(metadata_filtered$Fish_id == selectedFish())
+    fishIndex <- which(selected_metadata$Fish_id == selectedFish())
     
     if (length(fishIndex) == 0) return(NULL)  # If no valid index, exit
     
     # Extract Iso data
     isoData <- tibble(
-      Distance = seq_along(measurement_array_filtered[fishIndex, ]),
-      Iso = measurement_array_filtered[fishIndex, ]
+      Distance = seq_along(selected_data[fishIndex, ]),
+      Iso = selected_data[fishIndex, ]
     ) %>%
       mutate(MovingAvg = zoo::rollapply(Iso, width = 60, FUN = mean, fill = NA, align = "center"))
     
@@ -234,4 +269,5 @@ server <- function(input, output, session) {
 
 # Run the application
 shinyApp(ui, server)
+
 

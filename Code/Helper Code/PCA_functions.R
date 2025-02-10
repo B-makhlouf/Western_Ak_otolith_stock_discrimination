@@ -2,7 +2,7 @@
 
 ### This function puts the format with all of the metadata 
 
-run_pca <- function(measurement_array_filtered, metadata_filtered) {
+run_pca <- function(selected_data, selected_metadata) {
   # Run PCA
   pca_scores <- as.data.frame(PCA_raw$x)
   
@@ -12,10 +12,10 @@ run_pca <- function(measurement_array_filtered, metadata_filtered) {
     PC2 = pca_scores$PC2,
     PC3 = pca_scores$PC3,
     PC4 = pca_scores$PC4,
-    Fish_id = metadata_filtered$Fish_id,
-    Watershed = metadata_filtered$Watershed, 
-    Natal_iso = metadata_filtered$Natal_Iso,
-    Year = metadata_filtered$Year
+    Fish_id = selected_metadata$Fish_id,
+    Watershed = selected_metadata$Watershed, 
+    Natal_iso = selected_metadata$Natal_Iso,
+    Year = selected_metadata$Year
   )
   
   # Return both the PCA results and the raw PCA object
@@ -68,7 +68,7 @@ plot_pca_loadings <- function(PCA_raw, plot_type = "line") {
   loadings$Feature <- rownames(loadings)
   
   # Create a data frame from the matrix
-  feature_matrix <- matrix(1, nrow = 5, ncol = 1000)
+  feature_matrix <- matrix(1, nrow = 5, ncol = length(loadings$PC1))
   feature_matrix[1, ] <- abs(loadings$PC1)
   feature_matrix[2, ] <- abs(loadings$PC2)
   feature_matrix[3, ] <- abs(loadings$PC3)
@@ -77,7 +77,7 @@ plot_pca_loadings <- function(PCA_raw, plot_type = "line") {
   
   # Convert to long format for ggplot
   plot_data <- data.frame(
-    Index = rep(1:1000, times = 5),
+    Index = rep(1:length(loadings$PC1), times = 5),
     FeatureImportance = c(
       feature_matrix[1, ],
       feature_matrix[2, ],
@@ -85,8 +85,8 @@ plot_pca_loadings <- function(PCA_raw, plot_type = "line") {
       feature_matrix[4, ],
       feature_matrix[5, ]
     ),
-    Component = rep(c("PC1", "PC2", "PC3", "PC4", "PC5"), each = 1000),
-    Y = rep(1, 5000) # Constant Y value for straight line
+    Component = rep(c("PC1", "PC2", "PC3", "PC4", "PC5"), each = length(loadings$PC1)),
+    Y = rep(1, (5 * length(loadings$PC1))) # Constant Y value for straight line
   )
   
   # Line plot

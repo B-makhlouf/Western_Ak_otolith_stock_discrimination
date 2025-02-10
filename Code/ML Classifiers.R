@@ -1,95 +1,64 @@
-library(dplyr)
-library(caret)
-library(ggplot2)
-library(tidyr)
 
-# Clear the environment
-rm(list = ls())
 
-# Load all the processed data
-All_Data <- read.csv("Data/Processed/all_data_combined.csv")
+# Combine selected data and metadata
+ModelData <- selected_data %>%
+  mutate(Watershed = selected_metadata$Watershed) %>%
+  bind_cols(Fish_id = selected_metadata$Fish_id)  # Retain Fish_id for tracking
 
-# Extract metadata and isotopic data
-Metadata <- All_Data[, 2:5]
-Iso <- All_Data[, 6:ncol(All_Data)]
+# Split into training (80%) and testing (20%)
+set.seed(123)
+trainIndex <- createDataPartition(ModelData$Watershed, p = 0.8, list = FALSE)
 
-# Add Watershed column to ModelData
-ModelData <- Iso %>% mutate(Watershed = All_Data$Watershed)
+trainData <- ModelData[trainIndex, ] 
+testData <- ModelData[-trainIndex, ] 
 
-# Split data into training and testing sets based on Year
-testData <- ModelData %>% filter(All_Data$Year %in% c(2014, 2019))
-trainData <- ModelData %>% filter(!All_Data$Year %in% c(2014, 2019))
+# Separate Fish_id before training
+test_fish_ids <- testData$Fish_id  # Save Fish_id for evaluation
+trainData <- trainData %>% select(-Fish_id)  # Remove Fish_id from training data
+testData <- testData %>% select(-Fish_id)  # Remove Fish_id before predictions
 
-# Cross-validation settings
-trainControl <- trainControl(method = "cv", number = 5)  # 5-fold cross-validation
+# Remove rows with NA values
+trainData <- na.omit(trainData)
 
-# Function to train and evaluate models
-evaluate_model <- function(model_name, method, train_data, test_data) {
-  model <- train(Watershed ~ ., data = train_data, method = method, trControl = trainControl)
-  predictions <- predict(model, test_data)
-  conf_matrix <- confusionMatrix(predictions, test_data$Watershed)
-  
-  cat("\n", model_name, " Model Summary:\n")
-  print(model)
-  cat("\nConfusion Matrix:\n")
-  print(conf_matrix)
-  
-  # Return results dataframe
-  correct_classified <- predictions == test_data$Watershed
-  data.frame(
-    ID = All_Data$Fish_id[All_Data$Year %in% c(2014, 2019)],
-    Model = model_name,
-    Correct_Classified = ifelse(correct_classified, "Yes", "No")
+
+# Run a random forest 
+control <- trainControl(method = "cv", number = 5)
+
+# Train the model
+model <- train(Watershed ~ ., data = trainData, method = "rf", trControl = control)
+
+# Print the model to the console
+print(model)
+
+# test the model on the data 
+predictions <- predict(model, testData)
+
+# make sure both are factors
+predictions <- as.factor(predictions)
+testData$Watershed <- as.factor(testData$Watershed)
+
+# Evaluate model performance
+conf_matrix <- confusionMatrix(predictions, testData$Watershed)
+
+
+
+# Print confusion matrix
+print(conf_matrix)
+
+create_classification_results <- function(predictions, actuals, fish_ids) {
+  result <- data.frame(
+    fish_id = fish_ids,
+    Correctly_classified = ifelse(predictions == actuals, "Y", "N")
   )
+  return(result)
 }
 
-# Train and evaluate models
-rf_results <- evaluate_model("Random Forest", "rf", trainData, testData)
-knn_results <- evaluate_model("KNN", "knn", trainData, testData)
-svm_results <- evaluate_model("SVM", "svmRadial", trainData, testData)
+# For Random Forest
+rf_results <- create_classification_results(rf_predictions, testData$Watershed, testData$Fish_id)
 
-# Combine all results into one dataframe
-final_results <- bind_rows(rf_results, knn_results, svm_results)
-
-# Print final results
-print(final_results)
-
-## Save rf_results 
-write.csv(rf_results, "Data/Model Results/testing/rf_results.csv", row.names = FALSE)
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-# Extract misclassified fish_id for each model
-rf_misclassified <- rf_results %>% filter(Correctly_classified == "N") %>% select(fish_id) %>% mutate(Model = "Random Forest")
-knn_misclassified <- knn_results %>% filter(Correctly_classified == "N") %>% select(fish_id) %>% mutate(Model = "KNN")
-svm_misclassified <- svm_results %>% filter(Correctly_classified == "N") %>% select(fish_id) %>% mutate(Model = "SVM")
-
-# Combine the misclassified fish_id into a single data frame
-misclassified_fish <- bind_rows(rf_misclassified, knn_misclassified, svm_misclassified)
-
-# Rename the columns for clarity
-colnames(misclassified_fish) <- c("Fish_ID", "Model")
-
-# Display the resulting data frame
-print(misclassified_fish)
-
-# Optionally, save the data frame to a CSV file
-write.csv(misclassified_fish, "Data/Model Results/testing/misclassified_fish.csv", row.names = FALSE)
+# Add natal iso to the results by matching fish id to ALL data
+rf_results$Natal_iso <- All_Data$Natal_iso[match(rf_results$fish_id, All_Data$Fish_id)]
+write.csv(rf_results, "Data/Model Results/testing/RF_classification_results.csv", row.names = FALSE)
 
 
 
