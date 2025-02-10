@@ -220,6 +220,7 @@ server <- function(input, output, session) {
   })
   
   # PCA plot with dynamic coloring
+  # PCA plot with dynamic coloring
   output$pcaPlot <- renderPlot({
     if (coloringScheme() == "Watershed") {
       ggplot(PCA_full, aes_string(x = input$xComp, y = input$yComp, color = "Watershed")) +
@@ -231,8 +232,12 @@ server <- function(input, output, session) {
         theme(legend.title = element_blank()) +
         coord_cartesian(xlim = zoomRegion$x, ylim = zoomRegion$y)
     } else {
+      # Create a new alpha column based on the Classified_Color
+      PCA_full <- PCA_full %>%
+        mutate(alpha = ifelse(Classified_Color == "grey", 0, 1))
+      
       ggplot(PCA_full, aes_string(x = input$xComp, y = input$yComp, color = "Classified_Color")) +
-        geom_point(size = 2, alpha = 0.6) +
+        geom_point(size = 2, alpha = PCA_full$alpha) +
         scale_color_identity() +
         theme_classic() +
         labs(title = "PCA of Iso Values by Classification Accuracy",
