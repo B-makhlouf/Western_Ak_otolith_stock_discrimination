@@ -130,6 +130,202 @@ testdata$Watershed <- as.factor(testdata$Watershed) # Convert to factor for conf
 conf_matrix <- confusionMatrix(predictions, testdata$Watershed) # Create confusion matrix
 conf_matrix
 
+####################### ML LOOP 
+# Load necessary libraries
+library(tidyverse)
+library(here)
+library(caret)
+library(ggplot2)
+
+################################################################################
+# Step 1: Run Classification for All Datasets (RAW, MA, GAM)
+################################################################################
+
+# Function to run classification and record results
+run_classification <- function(data, metadata, dataset_name) {
+  # Add "Watershed" back into the data
+  ModelData <- as.data.frame(data)
+  ModelData$Watershed <- metadata$Watershed
+  
+  # Split the data into training and testing sets
+  set.seed(123)
+  trainIndex <- createDataPartition(ModelData$Watershed, p = 0.8, list = FALSE)
+  traindata <- ModelData[trainIndex, ]
+  testdata <- ModelData[-trainIndex, ]
+  testmetadata <- metadata[-trainIndex, ]
+  
+  # Train the model
+  control <- trainControl(method = "cv", number = 5)
+  model <- train(Watershed ~ ., data = traindata, method = "rf", trControl = control)
+  
+  # Make predictions
+  predictions <- predict(model, testdata)
+  predictions <- as.factor(predictions)
+  testdata$Watershed <- as.factor(testdata$Watershed)
+  
+  # Create a results dataframe
+  results <- data.frame(
+    Fish_id = testmetadata$Fish_id,
+    Dataset = dataset_name,
+    Predicted_Watershed = predictions,
+    Actual_Watershed = testdata$Watershed,
+    Correct_Classified = ifelse(predictions == testdata$Watershed, "Yes", "No")
+  )
+  
+  return(results)
+}
+
+# List of datasets and their names
+datasets <- list(
+  RAW = iso_data_raw[, 6:ncol(iso_data_raw)],
+  MA = iso_data_MA[, 6:ncol(iso_data_MA)],
+  GAM = iso_data_GAM[, 6:ncol(iso_data_GAM)]
+)
+
+# Metadata (same for all datasets)
+metadata <- iso_data_raw[, 1:5]
+
+# Run classification for each dataset and store results
+all_results <- data.frame()
+for (dataset_name in names(datasets)) {
+  dataset <- datasets[[dataset_name]]
+  results <- run_classification(dataset, metadata, dataset_name)
+  all_results <- rbind(all_results, results)
+}
+
+# Save the results to a CSV file
+write.csv(all_results, file = here("Data/Model Results/classification_comparison.csv"), row.names = FALSE)
+
+################################################################################
+# Step 2: Summarize Classification Accuracy by Dataset
+################################################################################
+
+# Summarize the classification accuracy for RAW, MA, and GAM datasets
+accuracy_summary <- all_results %>%
+  group_by(Dataset) %>%
+  summarize(
+    Total_Fish = n(),  # Total number of fish in each dataset
+    Correct_Classified = sum(Correct_Classified == "Yes"),  # Number of correctly classified fish
+    Accuracy = Correct_Classified / Total_Fish  # Classification accuracy
+  )
+
+# Print the accuracy summary
+print(accuracy_summary)
+
+################################################################################
+# Step 3: Identify Fish Correctly Classified in GAM but Not in RAW
+################################################################################
+
+# Find fish that were correctly classified in GAM but incorrectly classified in RAW
+correct_gam_incorrect_raw <- all_results %>%
+  filter(Dataset == "GAM" & Correct_Classified == "Yes") %>%  # Correct in GAM
+  inner_join(
+    all_results %>% filter(Dataset == "RAW" & Correct_Classified == "No"),  # Incorrect in RAW
+    by = "Fish_id"
+  ) %>%
+  select(Fish_id)  # Keep only the Fish_id column
+
+# Print the list of selected fish IDs
+print(correct_gam_incorrect_raw)
+
+# Extract the Fish IDs for further analysis
+selected_fish_ids_correct <- correct_gam_incorrect_raw$Fish_id
+
+################################################################################
+# Step 4: Identify Fish NOT Correctly Classified by GAM
+################################################################################
+
+# Find fish that were NOT correctly classified by GAM
+incorrect_gam <- all_results %>%
+  filter(Dataset == "GAM" & Correct_Classified == "No") %>%  # Incorrect in GAM
+  select(Fish_id)  # Keep only the Fish_id column
+
+# Print the list of selected fish IDs
+print(incorrect_gam)
+
+# Extract the Fish IDs for further analysis
+selected_fish_ids_incorrect <- incorrect_gam$Fish_id
+
+################################################################################
+# Step 5: Extract and Clean Time Series Data for Selected Fish
+################################################################################
+
+# Function to extract and clean time series data
+extract_and_clean_data <- function(selected_fish_ids, iso_data_raw, iso_data_GAM, reasonable_max) {
+  # Extract RAW and GAM data for the selected fish IDs
+  raw_data_selected <- iso_data_raw %>%
+    filter(Fish_id %in% selected_fish_ids) %>%  # Filter for selected fish
+    pivot_longer(cols = starts_with("X"), names_to = "Distance", values_to = "Iso") %>%  # Reshape to long format
+    mutate(Distance = as.numeric(gsub("X", "", Distance)),  # Convert Distance to numeric
+           Dataset = "RAW" )  # Add a column to indicate the dataset
+  
+  gam_data_selected <- iso_data_GAM %>%
+    filter(Fish_id %in% selected_fish_ids) %>%  # Filter for selected fish
+    pivot_longer(cols = starts_with("X"), names_to = "Distance", values_to = "Iso") %>%  # Reshape to long format
+    mutate(Distance = as.numeric(gsub("X", "", Distance)),  # Convert Distance to numeric
+           Dataset = "GAM" )  # Add a column to indicate the dataset
+  
+  # Cap Iso values at the reasonable maximum for RAW and GAM datasets
+  raw_data_selected <- raw_data_selected %>%
+    mutate(Iso = ifelse(Iso > reasonable_max, reasonable_max, Iso))  # Cap RAW data
+  
+  gam_data_selected <- gam_data_selected %>%
+    mutate(Iso = ifelse(Iso > reasonable_max, reasonable_max, Iso))  # Cap GAM data
+  
+  # Combine RAW and GAM data for plotting
+  combined_data <- bind_rows(raw_data_selected, gam_data_selected)
+  
+  # Remove the first row (if necessary)
+  combined_data <- combined_data[-1, ]
+  
+  return(combined_data)
+}
+
+# Define a reasonable maximum value for Iso to cap outliers
+reasonable_max <- 0.7150  # Adjust this based on your data
+
+# Extract and clean data for correctly classified by GAM but not RAW
+combined_data_correct <- extract_and_clean_data(selected_fish_ids_correct, iso_data_raw, iso_data_GAM, reasonable_max)
+
+# Extract and clean data for NOT correctly classified by GAM
+combined_data_incorrect <- extract_and_clean_data(selected_fish_ids_incorrect, iso_data_raw, iso_data_GAM, reasonable_max)
+
+################################################################################
+# Step 6: Visualize Time Series for Both Groups
+################################################################################
+
+# Function to plot time series
+plot_time_series <- function(combined_data, title) {
+  ggplot(combined_data, aes(x = Distance, y = Iso, color = Dataset)) +
+    # Plot RAW data with transparency
+    geom_point(
+      data = filter(combined_data, Dataset == "RAW"),
+      size = 1, alpha = 0.7, color = "gray"  # Gray with transparency
+    ) +
+    # Plot GAM data with no transparency and bright orange
+    geom_line(
+      data = filter(combined_data, Dataset == "GAM"),
+      size = 1, alpha = 1, color = "navyblue"  # Bright orange, fully opaque
+    ) +
+    facet_wrap(~ Fish_id, scales = "free_y") +  # Separate plots for each fish
+    labs(
+      title = title,
+      x = "Distance",
+      y = "Iso"
+    ) +
+    theme_minimal() +  # Use a minimal theme
+    theme(
+      strip.text = element_text(size = 10, face = "bold"),  # Customize facet labels
+      legend.position = "bottom"  # Move legend to the bottom
+    )
+}
+
+# Plot for individuals correctly classified by GAM but not RAW
+plot_time_series(combined_data_correct, "Individuals Correctly Classified Using GAM but Not RAW")
+
+# Plot for individuals NOT correctly classified by GAM
+plot_time_series(combined_data_incorrect, "Individuals NOT Correctly Classified Using GAM")
+
 ################################################################################
 
 ##### Organize the results of the classification into a dataframe
