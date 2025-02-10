@@ -9,19 +9,27 @@ library(ggplot2)
 library(dplyr)
 library(zoo)
 
-
-
-# ### Source in the function which does the data preprocessing. 
+### This script contains the function which preprocesses all of the raw data into a form that can be used for PCA/ML/Etc.  
 source(here("/Users/benjaminmakhlouf/Research_repos/Western_Ak_otolith_stock_discrimination/Code/Helper Code/Raw_Data_Preprocessing.R"))
+### This script contains helper functions to run PCA and a few important figures
 source(here("/Users/benjaminmakhlouf/Research_repos/Western_Ak_otolith_stock_discrimination/Code/Helper Code/PCA_functions.R"))
 
-# Run the function
-processed_data<-process_trimmed_data()
+################################################################################
+################################################################################
+###################### Data Preprocessing ######################################
+################################################################################
 
+# Take all of the raw data, 
+#interpolate to 1000 (or specified), 
+#run a GAM, 
+#run a MA, 
+#collect metadata
+#add to a matrix 
+processed_data<-process_trimmed_data() 
 
-###############################################################################
+############# Here, all the data has been preprocessed. ########################
 
-# Pull out the metadata and measurement array from the processed data
+# Pull out the metadata
 metadata <- tibble(
   Fish_id = processed_data$ids,
   Watershed = processed_data$watersheds,
@@ -29,97 +37,104 @@ metadata <- tibble(
   Year = processed_data$Year
 )
 
-
-
-iso_data<- processed_data$measurement_array #Regular data
+iso_data_raw<- processed_data$measurement_array #RAW interpolated data 
 iso_data_MA<- processed_data$moving_avg_array # Moving average data
-iso_data_MA <- iso_data_MA[, colSums(is.na(iso_data_MA)) == 0]
 iso_data_GAM<- processed_data$gam_smoothed_array # GAM smoothed data
 
-all_data_combined_raw<- cbind(metadata, iso_data) # combine the metadata and the raw data
-all_data_combined_MA<- cbind(metadata, iso_data_MA) # combine the metadata and the moving average data
-all_data_combined_GAM<- cbind(metadata, iso_data_GAM) # combine the metadata and the GAM smoothed data
+iso_data_MA <- iso_data_MA[, colSums(is.na(iso_data_MA)) == 0] # MA has tails of NA, remove
 
-# save as a .csv
+all_data_combined_raw<- cbind(metadata, iso_data_raw) # combine the metadata and the raw data
 write.csv(all_data_combined_raw, file = here("Data/Processed/all_data_combined_RAW.csv"))
+
+all_data_combined_MA<- cbind(metadata, iso_data_MA) # combine the metadata and the moving average data
 write.csv(all_data_combined_MA, file = here("Data/Processed/all_data_combined_MA.csv"))
+
+all_data_combined_GAM<- cbind(metadata, iso_data_GAM) # combine the metadata and the GAM smoothed data
 write.csv(all_data_combined_GAM, file = here("Data/Processed/all_data_combined_GAM.csv"))
 
 
+################################################################################
+################################################################################
+#If you don't need to change any of the preprocessing paramaters, skip the above
+#Read in the data below. 
+################################################################################
 
 ### READ IN ALL THREE 
-iso_data<- read.csv(here("Data/Processed/all_data_combined_RAW.csv"))
-iso_MA<- read.csv(here("Data/Processed/all_data_combined_MA.csv"))
-iso_MA <- iso_MA[, colSums(!is.na(iso_MA)) > 0]
-iso_GAM<- read.csv(here("Data/Processed/all_data_combined_GAM.csv"))
 
-iso_data<- all_data_combined_raw
+iso_data_raw<- read.csv(here("Data/Processed/all_data_combined_RAW.csv"))
+iso_data_MA<- read.csv(here("Data/Processed/all_data_combined_MA.csv"))
+iso_data_GAM<- read.csv(here("Data/Processed/all_data_combined_GAM.csv"))
 
+iso_data<- iso_data_raw ### Choose which set you want for analysis, call it just "iso_data"
 
-# metadata is the first 5 columns 
-metadata<- iso_data[,1:4]
-
-# remove the metadata columns from the data
+# re-separate iso and metadata 
+metadata<- iso_data[,1:5]
 iso_data<- iso_data[,6:ncol(iso_data)]
 
-
+################################################################################
 #FILTER
 
-#if you dont want to filter anything, just set selected_indices to 1:nrow(metadata)
+# NO FILTER 
 selected_indices <- 1:nrow(metadata)
 
-# otherwise you can filter here
+# ADD FILTER HERE 
 #selected_indices <- which((metadata$Natal_Iso >= 0.707 & metadata$Natal_Iso <= 0.7075))
 
 # Filter both
 selected_metadata <- metadata[selected_indices,]
 selected_data <- iso_data[selected_indices,]
-
-# make a data frame 
 selected_data<- as.matrix(selected_data)
 
-
-#############################################################################
-#############################################################################
-#################### PCA Exploration ########################################
-#############################################################################
+################################################################################
+################################################################################
+#################### PCA Exploration ###########################################
+################################################################################
 
 PCA_raw <- prcomp(selected_data, scale. = TRUE) #run the pca 
 PCA_full<- run_pca(selected_data, selected_metadata) #add all the metadata
 
-### figures 
-
-#### PCA data with natal origin
-natalIsoPCAPlot<-pca_natal_plot(PCA_full,1,2) # make a plot of the PCA's colored by watershed AND natal origin
+#### PCA plot with natal origin colored PCA plot 
+### Changing the numbers in the function will change the axes
+natalIsoPCAPlot<-pca_natal_plot(PCA_full,1,2)
 print(natalIsoPCAPlot)
 
-### Feature importance
+### Feature importance visualized along the timeseries 
+## Changing the plot type will change the visualization (options are "line" or "bar")
 feature_figure<- plot_pca_loadings(PCA_raw, plot_type = "line")
 plot(feature_figure)
 
-##############################################################################################################
+################################################################################
+################################################################################
+################# Machine Learning Classifier ##################################
+################################################################################
 
-# Machine learning classifier (RF)
+# Add "Watershed" back into selected_data and call it ModelData 
+ModelData <- as.data.frame(selected_data) # Convert matrix to data frame
+ModelData$Watershed <- selected_metadata$Watershed # Add Watershed column
 
 # Split the data into training and testing sets
 library(caret)
 set.seed(123)
-
 trainIndex <- createDataPartition(ModelData$Watershed, p = 0.8, list = FALSE)
-
-traindata<- selected_data[trainIndex,]
+traindata<- ModelData[trainIndex,]
 trainmetadata<- selected_metadata[trainIndex,]
-testdata<- selected_data[-trainIndex,]
+testdata<- ModelData[-trainIndex,]
 testmetadata<- selected_metadata[-trainIndex,]
-control <- trainControl(method = "cv", number = 5)
-model <- train(Watershed ~ ., data = trainData, method = "rf", trControl = control)
-predictions <- predict(model, testData)
-predictions <- as.factor(predictions)
-testData$Watershed <- as.factor(testData$Watershed)
-conf_matrix <- confusionMatrix(predictions, testData$Watershed)
-conf_matrix
-fish_ids<- testmetadata$Fish_id
 
+### Set parameters, # of cross validation, method, and train the model
+control <- trainControl(method = "cv", number = 5) # n fold cross validation 
+model <- train(Watershed ~ ., data = traindata, method = "rf", trControl = control) # Train the model (long step)
+predictions <- predict(model, testdata) # Make predictions on the test set 
+predictions <- as.factor(predictions) # Convert to factor for confusion matrix
+testdata$Watershed <- as.factor(testdata$Watershed) # Convert to factor for confusion matrix
+conf_matrix <- confusionMatrix(predictions, testdata$Watershed) # Create confusion matrix
+conf_matrix
+
+################################################################################
+
+##### Organize the results of the classification into a dataframe
+
+fish_ids<- testmetadata$Fish_id
 
 create_classification_results <- function(predictions, actuals, fish_ids) {
   result <- data.frame(
@@ -129,13 +144,9 @@ create_classification_results <- function(predictions, actuals, fish_ids) {
   return(result)
 }
 
-# Applying the function correctly
+# Create DF with rf results by fish ID 
 rf_results <- create_classification_results(predictions, testmetadata$Watershed, fish_ids)
-
-# Add natal iso to the results by matching fish id to ALL data
-rf_results$Natal_iso <- testmetadata$Natal_iso[match(rf_results$fish_id, testmetadata$Fish_id)]
-
-# Save results
+rf_results$Natal_iso <- testmetadata$Natal_iso[match(rf_results$fish_id, testmetadata$Fish_id)] # Add Natal_iso
 write.csv(rf_results, "Data/Model Results/testing/RF_classification_results.csv", row.names = FALSE)
 
 # Merge PCA data with classification results
@@ -147,7 +158,13 @@ PCA_full$Classified_Color[is.na(PCA_full$Correct_Classified)] <- "grey"
 
 
 
-################# R Shiny exploration plot 
+
+
+
+################################################################################
+################################################################################
+################# R Shiny exploration plot #####################################
+################################################################################
 
 
 # UI
@@ -161,7 +178,7 @@ ui <- fluidPage(
       selectInput("xComp", "X Component:", choices = names(PCA_full), selected = "PC1"),
       selectInput("yComp", "Y Component:", choices = names(PCA_full), selected = "PC2"),
       actionButton("resetZoom", "Reset Zoom"),
-      actionButton("toggleColor", "Toggle Coloring Scheme")  # Button to toggle coloring
+      actionButton("toggleColor", "Random Forest Classification")  # Button to toggle coloring
     ),
     mainPanel(
       width = 6, 
