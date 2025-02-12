@@ -33,6 +33,12 @@ pca_natal_plot <- function(PCA_full, pca_x = 1, pca_y = 2) {
   pca_x_col <- paste0("PC", pca_x)
   pca_y_col <- paste0("PC", pca_y)
   
+  # filter within -100 and 100 
+  PCA_full <- PCA_full %>%
+    filter(!!sym(pca_x_col) > -100 & !!sym(pca_x_col) < 100) %>%
+    filter(!!sym(pca_y_col) > -100 & !!sym(pca_y_col) < 100)
+  
+  
   # PCA plot by Watershed
   pca_plot <- ggplot(PCA_full, aes_string(x = pca_x_col, y = pca_y_col, color = "Watershed")) +
     geom_point(size = 2, alpha = .2) +

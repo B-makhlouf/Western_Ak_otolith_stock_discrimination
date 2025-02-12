@@ -196,6 +196,10 @@ for (dataset_name in names(datasets)) {
 # Save the results to a CSV file
 write.csv(all_results, file = here("Data/Model Results/classification_comparison.csv"), row.names = FALSE)
 
+
+#### Read in the results 
+all_results <- read.csv(here("Data/Model Results/classification_comparison.csv"))
+
 ################################################################################
 # Step 2: Summarize Classification Accuracy by Dataset
 ################################################################################
@@ -344,6 +348,10 @@ create_classification_results <- function(predictions, actuals, fish_ids) {
 rf_results <- create_classification_results(predictions, testmetadata$Watershed, fish_ids)
 rf_results$Natal_iso <- testmetadata$Natal_iso[match(rf_results$fish_id, testmetadata$Fish_id)] # Add Natal_iso
 write.csv(rf_results, "Data/Model Results/testing/RF_classification_results.csv", row.names = FALSE)
+
+# Read in rf results 
+rf_results <- read.csv("Data/Model Results/testing/RF_classification_results.csv")
+
 
 # Merge PCA data with classification results
 PCA_full <- left_join(PCA_full, rf_results, by = c("Fish_id" = "ID"))

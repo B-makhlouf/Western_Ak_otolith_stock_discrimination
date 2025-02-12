@@ -3,9 +3,9 @@ library(shapeR)
 library(ggplot2)
 
 shape = shapeR("/Users/benjaminmakhlouf/Research_repos/Western_Ak_otolith_stock_discrimination/ShapeAnalysis", "FISH.csv")
+
+
 shape = detect.outline(shape, threshold = 0.2, write.outline.w.org = FALSE)
-
-
 shape = generateShapeCoefficients(shape)
 shape = enrich.master.list(shape) #connect to the metadata
 
@@ -85,7 +85,7 @@ labels_all <- labels
 set.seed(123)
 
 # Split data into training (80%) and testing (20%)
-trainIndex <- createDataPartition(labels_all, p = 0.8, list = FALSE)
+trainIndex <- createDataPartition(labels_all, p = 0.6, list = FALSE)
 wavelet_train <- wavelet_all[trainIndex, ]
 wavelet_test <- wavelet_all[-trainIndex, ]
 labels_train <- labels_all[trainIndex]

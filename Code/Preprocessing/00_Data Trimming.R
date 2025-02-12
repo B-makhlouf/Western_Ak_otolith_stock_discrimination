@@ -94,7 +94,9 @@ metadata <- read.csv(metadata_path)
 # Load all individual files
 files <- list.files(data_dir, full.names = TRUE)
 
-#file_path<- files[1]
+# 
+file_path <- files[5]
+
 
 # Process each file
 for (file_path in files) {
@@ -112,6 +114,12 @@ for (file_path in files) {
     natal_iso_start <- fish_metadata$natal_start
     natal_iso_end <- fish_metadata$natal_end
     
+    #IF the first four characters are 2011, reverse all the data 
+    if (substr(fish_id, 1, 4) == "2011") {
+      individual_data <- individual_data %>% mutate_at(vars(Iso:Sr88), funs(rev(.)))
+    }
+
+
     # Plot Iso vs Microns
     individual_data$Iso_MA <- zoo::rollmean(individual_data$Iso, 60, fill = NA)
     
