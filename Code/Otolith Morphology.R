@@ -4,111 +4,71 @@ library(ggplot2)
 
 shape = shapeR("/Users/benjaminmakhlouf/Research_repos/Western_Ak_otolith_stock_discrimination/ShapeAnalysis", "FISH.csv")
 
-
-shape = detect.outline(shape, threshold = 0.2, write.outline.w.org = FALSE)
-shape = generateShapeCoefficients(shape)
-shape = enrich.master.list(shape) #connect to the metadata
+#### Detect outlines 
+outlinesonly = detect.outline(shape, threshold = 0.2, write.outline.w.org = FALSE)
 
 
-plotWaveletShape(shape, "Watershed", show.angle = TRUE, lwd = 2,lty = 1)
-Watershed = factor(getMasterlist(shape)$Watershed) #Get factor of interest (Watershed)
+########### Take a look at the raw outlines all plotted together 
+
+yk_outlines = outlinesonly@outline.list$YK
+kk_outlines = outlinesonly@outline.list$KK
+nk_outlines = outlinesonly@outline.list$NK
 
 
-####################### RF Classification
-################################################################################
+# Initialize an empty list to store the data
+data_list <- list()
 
-library(ggfortify)
+# Add yk_outlines data
+for (i in seq_along(yk_outlines)) {
+  outline <- yk_outlines[[i]]
+  x <- as.numeric(outline[[1]])
+  y <- as.numeric(outline[[2]])
+  data_list[[length(data_list) + 1]] <- data.frame(x = x, y = y, watershed = "YK", individual = i)
+}
 
+# Add kk_outlines data
+for (i in seq_along(kk_outlines)) {
+  outline <- kk_outlines[[i]]
+  x <- as.numeric(outline[[1]])
+  y <- as.numeric(outline[[2]])
+  data_list[[length(data_list) + 1]] <- data.frame(x = x, y = y, watershed = "KK", individual = i)
+}
 
-# Extract the masterlist 
-masterlist<- getMasterlist(shape)
+# Add nk_outlines data
+for (i in seq_along(nk_outlines)) {
+  outline <- nk_outlines[[i]]
+  x <- as.numeric(outline[[1]])
+  y <- as.numeric(outline[[2]])
+  data_list[[length(data_list) + 1]] <- data.frame(x = x, y = y, watershed = "NK", individual = i)
+}
 
-#remove rows with NA from masterlist 
-masterlist<- masterlist[complete.cases(masterlist),]
+# Combine all data into a single data frame
+shape_data <- do.call(rbind, data_list)
 
+# Create A plot of all shapes together... 
+allShapesTogetherPlot<- ggplot(shape_data, aes(x = x, y = y, group = interaction(watershed, individual), color = watershed)) +
+  geom_path(linewidth = .3, alpha =.1) +  # Use geom_path() to connect points in order
+  scale_color_manual(values = c("YK" = "blue", "KK" = "red", "NK" = "green")) +  # Assign colors
+  labs(x = "X", y = "Y", title = "All Outlines", color = "Watershed") +  # Add labels and title
+  theme_grey() +  # Use a minimal theme
+  theme(legend.position = "top")  
 
-wavelet<- masterlist[11:118]
-labels<- masterlist$Watershed
-
-# run a PCA on the wavelet data
-pca<- prcomp(wavelet, center = TRUE, scale = TRUE)
-summary(pca)
-pca_results<- as.data.frame(pca$x)
-
-# Add labels
-pca_results$Watershed<- labels
-
-# remove those individuals with a pc2 of less than -8 OR a pc1 of less than -20
-pca_results<- pca_results[!(pca_results$PC1 < -20 | pca_results$PC1 > 20) | pca_results$PC2> 40,]
-
-# Plot principal component 1 vs 2 and color by labels 
-ggplot(pca_results, aes(x = PC1, y = PC2, color = Watershed)) +
-  geom_point(size = 1, alpha = 0.8) +
-  stat_ellipse(type = "norm") +  # Add probability ellipses
-  theme_classic() +
-  labs(title = "PCA of Iso Values by Watershed") +
-  theme(legend.title = element_blank())
-
- ggplot(pca_results, aes(x = PC1, y = PC3, color = Watershed)) +
-  geom_point(size = 1, alpha = 0.8) +
-  stat_ellipse(type = "norm") +  # Add probability ellipses
-  theme_classic() +
-  labs(title = "PCA of Iso Values by Watershed") +
-  theme(legend.title = element_blank())
-
- ggplot(pca_results, aes(x = PC2, y = PC3, color = Watershed)) +
-  geom_point(size = 1, alpha = 0.8) +
-  stat_ellipse(type = "norm") +  # Add probability ellipses
-  theme_classic() +
-  labs(title = "PCA of Iso Values by Watershed") +
-  theme(legend.title = element_blank())
+ggsave("Figures/allShapesTogetherPlot.png", allShapesTogetherPlot, width = 20, height = 15, units = "cm")
 
 
+#########################################################################################################
 
-pca_plot
+coefficients = generateShapeCoefficients(outlinesonly) # Generate the RAW coeffients (not standardized)
+coefShapesExtr = enrich.master.list(coefficients) #connect to the metadata
 
-########## simple classifier test 
 
-### Random forest using caret 
-library(caret)
+#MEAN reconstruction of shape for each class 
+plotWaveletShape(coefShapesExtr, "Watershed", show.angle = TRUE, lwd = 2,lty = 1)
 
-wavelet_all<- wavelet
-labels_all<- labels
 
-# Split the wavelet data  into training and testing 80.20
+#########################################################################################################
 
-# Assuming wavelet and labels are your full dataset and response variable
-wavelet_all <- wavelet
-labels_all <- labels
 
-# Set seed for reproducibility
-set.seed(123)
 
-# Split data into training (80%) and testing (20%)
-trainIndex <- createDataPartition(labels_all, p = 0.6, list = FALSE)
-wavelet_train <- wavelet_all[trainIndex, ]
-wavelet_test <- wavelet_all[-trainIndex, ]
-labels_train <- labels_all[trainIndex]
-labels_test <- labels_all[-trainIndex]
 
-# Define the control using a random forest
-control <- trainControl(method="cv", number=5)
-
-# Train the model
-model <- train(wavelet_train, labels_train, method="rf", trControl=control)
-
-# Print the model to the console
-print(model)
-
-# Make predictions
-predictions <- predict(model, wavelet_test)
-
-#make sure predictions and labels_test are factors
-predictions <- as.factor(predictions)
-labels_test <- as.factor(labels_test)
-confusionMatrix(predictions, labels_test)
-
-table(labels_all)  # For the full dataset
-table(labels_train)  # For the training set
-table(labels_test)   # For the testing set
 
