@@ -5,45 +5,7 @@ library(tidyverse)
 library(here)
 library(cowplot)
 
-example(dtw)
-
-
-## A noisy sine wave as query
-
-alignment<-dtw(query,reference)
-plot(alignment,type="alignment")
-
-plot(alignment$index1,alignment$index2,main="Warping function")
-lines(1:100-25,col="red")
-
-
-alignmentOBE <-
-     dtw(query[44:88],reference,
-                   keep=TRUE,step=asymmetric,
-                    window.type = sakoeChibaWindow(iw, jw, window.size= 20),
-                   open.end=TRUE,open.begin=TRUE)
-
-
-
-??dtwWindowingFunctions
-
-?dtw
-
-alignmentOBE <-
-  dtw(testfish1$isonew,testfish2$isonew,
-      keep=TRUE,
-      window.type = slantedBandWindow,
-      window.size = 2,
-      open.end=FALSE,open.begin=FALSE, 
-      )
-
-
-
-testfish1$isonew<- testfish1$Iso *1000
-testfish2$isonew<- testfish2$Iso *1000
-
-plot(alignmentOBE,type="two",off=20)
-
+# example(dtw)
 
 ################################################################################
 # Step 1: Load and Plot Time Series for Specific Fish Pairs
@@ -93,58 +55,135 @@ print(combined_plot2)
 ################################################################################
 # Step 2: Compute DTW Distances for Specific Fish Pairs
 ################################################################################
-# Function to compute DTW distance and alignment between two time series
-compute_dtw <- function(ts1, ts2, title1, title2, color1, color2) {
-  # Compute DTW alignment
-  alignment <- dtw(ts1$Iso, ts2$Iso, keep = TRUE)
-  
-  # Create a dataframe for plotting
-  aligned_data <- data.frame(
-    Index1 = alignment$index1,
-    Index2 = alignment$index2,
-    Iso1 = ts1$Iso[alignment$index1],
-    Iso2 = ts2$Iso[alignment$index2]
+
+
+
+########## RAW TS (with adjusted yaxis)
+
+testfish1$isonew<- testfish1$Iso *1000
+testfish2$isonew<- testfish2$Iso *1000
+
+alignmentOBE <-
+  dtw(testfish1$isonew,testfish2$isonew,
+      keep=TRUE,
+      window.type = slantedBandWindow,
+      window.size = 2,
+      open.end=FALSE,open.begin=FALSE, 
   )
-  
-  # Plot the aligned time series
-  alignment_plot <- ggplot(aligned_data, aes(x = Index1)) +
-    geom_line(aes(y = Iso1, color = title1), size = 1) +
-    geom_line(aes(y = Iso2, color = title2), size = 1) +
-    scale_color_manual(values = c(color1, color2)) +
-    labs(
-      title = paste("DTW Alignment:", title1, "vs", title2),
-      x = "Index",
-      y = "Iso",
-      color = "Fish"
-    ) +
-    theme_minimal() +
-    theme(legend.position = "bottom")
-  
-  # Plot the alignment path
-  path_plot <- ggplot(aligned_data, aes(x = Index1, y = Index2)) +
-    geom_line(color = "black", size = 1) +
-    labs(
-      title = paste("DTW Alignment Path:", title1, "vs", title2),
-      x = "Index (Fish 1)",
-      y = "Index (Fish 2)"
-    ) +
-    theme_minimal()
-  
-  # Combine the plots
-  combined_dtw_plot <- cowplot::plot_grid(alignment_plot, path_plot, ncol = 1)
-  
-  # Display the combined DTW plot
-  print(combined_dtw_plot)
-  
-  # Return the DTW distance
-  return(alignment$distance)
-}
 
-# Compute DTW for the first pair (2019_yk_410 vs 2019_yk_415)
-dtw_distance_1_2 <- compute_dtw(testfish1, testfish2, "2019_yk_410", "2019_yk_415", "blue", "red")
 
-print(paste("DTW Distance (2019_yk_410 vs 2019_yk_415):", dtw_distance_1_2))
+plot(alignmentOBE,type="two",off=20)
 
-# Compute DTW for the second pair (2015_yk_493a vs 2015_yk_494)
-dtw_distance_3_4 <- compute_dtw(testfish3, testfish4, "2015_yk_493a", "2015_yk_494", "blue", "red")
-print(paste("DTW Distance (2015_yk_493a vs 2015_yk_494):", dtw_distance_3_4))
+
+
+############################################################
+
+# Read in all preproceesed data 
+
+MA_reads<- read.csv(here(here("Data/Processed/all_data_combined_MA.csv")))
+
+
+# Find the same fish 
+
+# find the index which fish_id == 2019_yk_410
+testfish1<- MA_reads %>%
+  filter(Fish_id == "2019_yk_410") %>%
+  #select only the 6th column to the end 
+  select(6:ncol(.)) %>%
+  as.numeric()
+  
+testfish2<- MA_reads %>%
+  filter(Fish_id == "2019_yk_415") %>%
+  #select only the 6th column to the end 
+  select(6:ncol(.)) %>%
+  as.numeric()
+
+
+# Multiply all values in each times 1000
+testfish1<- testfish1*1000
+testfish2<- testfish2*1000
+
+alignmentOBE <-
+  dtw(testfish1,testfish2,
+      keep=TRUE,
+      window.type = slantedBandWindow,
+      window.size = 100,
+      open.end=FALSE,open.begin=FALSE, 
+  )
+
+alignmentOBE <-
+  dtw(testfish1,testfish2,
+      keep=TRUE,
+      window.type = sakoeChibaWindow ,
+      window.size = 20,
+      open.end=FALSE,open.begin=FALSE, 
+  )
+
+
+
+plot(alignmentOBE,type="two",off=10)
+
+
+
+################# Testfish 3 and 4
+
+testfish3<- MA_reads %>%
+  filter(Fish_id == "2015_yk_493a") %>%
+  #select only the 6th column to the end 
+  select(6:ncol(.)) %>%
+  as.numeric()
+
+
+testfish3<- testfish3*1000
+
+
+testfish4<- MA_reads %>%
+  filter(Fish_id == "2015_yk_494") %>%
+  #select only the 6th column to the end 
+  select(6:ncol(.)) %>%
+  as.numeric()
+
+testfish4<- testfish4*1000
+
+
+
+alignmentOBEOpenEndNO <-
+  dtw(testfish3,testfish4,
+      keep=TRUE,
+      window.type = slantedBandWindow,
+      window.size = 50,
+      open.end=FALSE,open.begin=FALSE, 
+  )
+
+
+plot(alignmentOBEOpenEndNO,type="two",off=10)
+
+
+alignmentOBEOpenEndYES <- dtw(
+  testfish3, testfish4,
+  keep = TRUE,
+  window.type = slantedBandWindow,
+  window.size = 50,
+  step.pattern = asymmetric,  # Use a step pattern that supports normalization
+  open.end = FALSE,
+  open.begin = TRUE
+)
+
+
+plot(alignmentOBE,type="two",off=10)
+
+
+## interpolate testfish4 to 700 reads 
+testfish3_short <- approx(1:length(testfish3), testfish3, n = 700)$y
+
+alignmentOBEOpenEndYES <- dtw(
+  testfish3_short, testfish4,
+  keep = TRUE,
+  window.type = slantedBandWindow,
+  window.size = 50,
+  step.pattern = asymmetric,  # Use a step pattern that supports normalization
+  open.end = TRUE,
+  open.begin = FALSE
+)
+
+plot(alignmentOBEOpenEndYES,type="two",off=10)
