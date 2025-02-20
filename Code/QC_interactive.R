@@ -12,6 +12,7 @@ files <- list.files(la_data_dir, pattern = "_trimLocations.csv", full.names = TR
 # Load previous QC results if they exist
 qc_results_file <- file.path(la_data_dir, "qc_results.csv")
 
+
 if (file.exists(qc_results_file) && file.info(qc_results_file)$size > 0) {
   qc_results <- read.csv(qc_results_file, stringsAsFactors = FALSE)
   
@@ -24,11 +25,11 @@ if (file.exists(qc_results_file) && file.info(qc_results_file)$size > 0) {
   # Start from the next file
   start_index <- ifelse(is.na(last_index), 1, last_index + 1)
 } else {
-  qc_results <- data.frame(File = character(), Fish_ID = character(), QC_Grade = character(), stringsAsFactors = FALSE)
+  qc_results <- data.frame(File = character(), Fish_ID = character(), QC_Grade = character(), Core_Status = character(), stringsAsFactors = FALSE)
   start_index <- 1  # Start from the beginning if no records exist
 }
 
-# Function to display plots and prompt for QC grade
+# Function to display plots and prompt for QC grade and core status
 qc_grade_plot <- function(file_path) {
   individual_data <- read.csv(file_path)
   fish_id <- individual_data$Fish_id[1]
@@ -50,19 +51,34 @@ qc_grade_plot <- function(file_path) {
   print(combined_plot)
   
   cat("QC Grade for", fish_id, ":\n")
-  cat("Press 'p' for PERFECT, 'r' for REDO, 'd' for DELETE, or 's' to SKIP.\n")
-  qc_grade <- readline(prompt = "Enter grade (p/r/d/s): ")
+  cat("Press 'y' for GOOD, 'r' for REDO, 'd' for DELETE")
+  qc_grade <- readline(prompt = "Enter grade (y/r/d): ")
   
   qc_grade <- switch(
     tolower(qc_grade),
-    "p" = "Perfect",
+    "y" = "Yes",
     "r" = "Redo",
     "d" = "Delete",
-    "s" = "Skip",
     NA
   )
   
-  return(qc_grade)
+  if (!is.na(qc_grade) && qc_grade != "Skip") {
+    cat("Core Status for", fish_id, ":\n")
+    cat("Press 'y' for YES, 'p' for PARTIAL, or 'n' for NO.\n")
+    core_status <- readline(prompt = "Enter core status (y/p/n): ")
+    
+    core_status <- switch(
+      tolower(core_status),
+      "y" = "Yes",
+      "p" = "Partial",
+      "n" = "No",
+      NA
+    )
+  } else {
+    core_status <- NA
+  }
+  
+  return(list(qc_grade = qc_grade, core_status = core_status))
 }
 
 # Loop through files starting from the correct index
@@ -70,12 +86,14 @@ for (i in start_index:length(files)) {
   file_path <- files[i]
   
   tryCatch({
-    qc_grade <- qc_grade_plot(file_path)
+    result <- qc_grade_plot(file_path)
+    qc_grade <- result$qc_grade
+    core_status <- result$core_status
     
     if (!is.na(qc_grade) && qc_grade != "Skip") {
       fish_id <- tools::file_path_sans_ext(basename(file_path))
       qc_results <- qc_results %>%
-        bind_rows(data.frame(File = file_path, Fish_ID = fish_id, QC_Grade = qc_grade, stringsAsFactors = FALSE))
+        bind_rows(data.frame(File = file_path, Fish_ID = fish_id, QC_Grade = qc_grade, Core_Status = core_status, stringsAsFactors = FALSE))
       
       write.csv(qc_results, qc_results_file, row.names = FALSE)
     }

@@ -8,7 +8,9 @@ shape = shapeR("/Users/benjaminmakhlouf/Research_repos/Western_Ak_otolith_stock_
 outlinesonly = detect.outline(shape, threshold = 0.2, write.outline.w.org = FALSE)
 
 
-########### Take a look at the raw outlines all plotted together 
+###########
+################################################################################
+#Take a look at the raw outlines all plotted together 
 
 yk_outlines = outlinesonly@outline.list$YK
 kk_outlines = outlinesonly@outline.list$KK
@@ -58,6 +60,7 @@ ggsave("Figures/allShapesTogetherPlot.png", allShapesTogetherPlot, width = 20, h
 
 #########################################################################################################
 
+
 coefficients = generateShapeCoefficients(outlinesonly) # Generate the RAW coeffients (not standardized)
 coefShapesExtr = enrich.master.list(coefficients) #connect to the metadata
 
@@ -65,10 +68,14 @@ coefShapesExtr = enrich.master.list(coefficients) #connect to the metadata
 #MEAN reconstruction of shape for each class 
 plotWaveletShape(coefShapesExtr, "Watershed", show.angle = TRUE, lwd = 2,lty = 1)
 
+est.list = estimate.outline.reconstruction(coefShapesExtr)
 
-#########################################################################################################
+?estimate.outline.reconstruction
+outline.reconstruction.plot(est.list, max.num.harmonics = 12)
+
+?outline.reconstruction.plot
 
 
-
+plotWavelet(coefShapesExtr, level = 5, class.name = "pop", useStdcoef = TRUE)
 
 

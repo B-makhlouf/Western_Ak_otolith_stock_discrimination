@@ -1,9 +1,6 @@
 
 
 
-
-
-
 #### This function takes all the raw data files in the Tim_Locations folder (which have been given a trim location)
 # And processes them to be used in Classifier, PCA, DTW, etc. 
 process_trimmed_data <- function(interp_points = 1000, microns_before = 250, microns_after = 400, window_size = 60, gamma_value = 1.4) {
@@ -13,7 +10,7 @@ process_trimmed_data <- function(interp_points = 1000, microns_before = 250, mic
   library(mgcv)
   
   data_directory <- here("Data/Processed/Trim_Locations")
-  files <- list.files(data_directory, full.names = TRUE)
+  files <- list.files(data_directory, full.names = TRUE, pattern = "\\.csv$")
   results_list <- list()
   
   for (file_path in files) {

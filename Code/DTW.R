@@ -151,7 +151,7 @@ alignmentOBEOpenEndNO <-
   dtw(testfish3,testfish4,
       keep=TRUE,
       window.type = slantedBandWindow,
-      window.size = 50,
+      window.size = 200,
       open.end=FALSE,open.begin=FALSE, 
   )
 
@@ -160,12 +160,12 @@ plot(alignmentOBEOpenEndNO,type="two",off=10)
 
 
 alignmentOBEOpenEndYES <- dtw(
-  testfish3, testfish4,
+  testfish3_short, testfish4,
   keep = TRUE,
   window.type = slantedBandWindow,
   window.size = 50,
   step.pattern = asymmetric,  # Use a step pattern that supports normalization
-  open.end = FALSE,
+  open.end = TRUE,
   open.begin = TRUE
 )
 
@@ -176,14 +176,33 @@ plot(alignmentOBE,type="two",off=10)
 ## interpolate testfish4 to 700 reads 
 testfish3_short <- approx(1:length(testfish3), testfish3, n = 700)$y
 
-alignmentOBEOpenEndYES <- dtw(
-  testfish3_short, testfish4,
-  keep = TRUE,
-  window.type = slantedBandWindow,
-  window.size = 50,
-  step.pattern = asymmetric,  # Use a step pattern that supports normalization
-  open.end = TRUE,
-  open.begin = FALSE
-)
+
 
 plot(alignmentOBEOpenEndYES,type="two",off=10)
+
+
+
+
+
+################################################################################
+
+#### Assessing the ability of DTW to cluster fish based on their iso vs distance data
+
+# Read in the data 
+All_GAM_data<- read.csv(here(here("Data/Processed/all_data_combined_GAM.csv")))
+
+# Separate the metadata and the GAM data 
+# metadata is the first 5 columns 
+GAM_metadata<- GAM_reads[,1:5]
+GAM_data<- GAM_reads[,6:ncol(GAM_reads)]
+
+# find the index of... FishID: 2016_yk_119
+Yukon119<- All_GAM_data %>%
+  filter(Fish_id == "2016_yk_119") %>%
+  select(6:ncol(.)) %>%
+  as.numeric()
+
+# Plot the data as a line 
+plot(Yukon119, type = "l")
+
+

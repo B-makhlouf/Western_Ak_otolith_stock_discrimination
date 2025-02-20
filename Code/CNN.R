@@ -20,6 +20,7 @@ model <- keras_model_sequential() %>%
   layer_dense(units = 64, activation = "relu") %>%
   layer_dense(units = 1)  # Output layer for regression
 
+
 # Compile the model
 model %>% compile(
   optimizer = "adam",

@@ -8,6 +8,7 @@ library(shiny)
 library(ggplot2)
 library(dplyr)
 library(zoo)
+library(caret)
 
 ### This script contains the function which preprocesses all of the raw data into a form that can be used for PCA/ML/Etc.  
 source(here("/Users/benjaminmakhlouf/Research_repos/Western_Ak_otolith_stock_discrimination/Code/Helper Code/Raw_Data_Preprocessing.R"))
@@ -25,7 +26,7 @@ source(here("/Users/benjaminmakhlouf/Research_repos/Western_Ak_otolith_stock_dis
 #run a MA, 
 #collect metadata
 #add to a matrix 
-processed_data<-process_trimmed_data() 
+processed_data<-process_trimmed_data(microns_before = 0, microns_after = 50) 
 
 ############# Here, all the data has been preprocessed. ########################
 
@@ -65,7 +66,7 @@ iso_data_raw<- read.csv(here("Data/Processed/all_data_combined_RAW.csv"))
 iso_data_MA<- read.csv(here("Data/Processed/all_data_combined_MA.csv"))
 iso_data_GAM<- read.csv(here("Data/Processed/all_data_combined_GAM.csv"))
 
-iso_data<- iso_data_raw ### Choose which set you want for analysis, call it just "iso_data"
+iso_data<- iso_data_GAM ### Choose which set you want for analysis, call it just "iso_data"
 
 # re-separate iso and metadata 
 metadata<- iso_data[,1:5]
@@ -108,27 +109,212 @@ plot(feature_figure)
 ################# Machine Learning Classifier ##################################
 ################################################################################
 
-# Add "Watershed" back into selected_data and call it ModelData 
-ModelData <- as.data.frame(selected_data) # Convert matrix to data frame
-ModelData$Watershed <- selected_metadata$Watershed # Add Watershed column
+# Add "Watershed" back into selected_data and create ModelData
+ModelData <- as.data.frame(selected_data)  # Convert matrix to data frame
+ModelData$Watershed <- selected_metadata$Watershed  # Add Watershed column
 
-# Split the data into training and testing sets
-library(caret)
+# Split the data into training (80%) and testing (20%) sets
 set.seed(123)
 trainIndex <- createDataPartition(ModelData$Watershed, p = 0.8, list = FALSE)
-traindata<- ModelData[trainIndex,]
-trainmetadata<- selected_metadata[trainIndex,]
-testdata<- ModelData[-trainIndex,]
-testmetadata<- selected_metadata[-trainIndex,]
+traindata <- ModelData[trainIndex, ]
+testdata <- ModelData[-trainIndex, ]
 
-### Set parameters, # of cross validation, method, and train the model
-control <- trainControl(method = "cv", number = 5) # n fold cross validation 
-model <- train(Watershed ~ ., data = traindata, method = "rf", trControl = control) # Train the model (long step)
-predictions <- predict(model, testdata) # Make predictions on the test set 
-predictions <- as.factor(predictions) # Convert to factor for confusion matrix
-testdata$Watershed <- as.factor(testdata$Watershed) # Convert to factor for confusion matrix
-conf_matrix <- confusionMatrix(predictions, testdata$Watershed) # Create confusion matrix
-conf_matrix
+# Set up cross-validation parameters
+control <- trainControl(method = "cv", number = 5, classProbs = TRUE)  # Enable class probabilities
+
+# Train the Random Forest model
+set.seed(123)
+model <- train(Watershed ~ ., data = traindata, method = "rf", trControl = control)
+
+# Make predictions on the test set (both class labels and probabilities)
+predictions <- predict(model, testdata)
+probabilities <- predict(model, testdata, type = "prob")
+
+# Compute confidence scores (highest probability for each prediction)
+confidence_scores <- apply(probabilities, 1, max)
+
+# Create results dataframe with predictions, actual values, and confidence scores
+results <- data.frame(
+  Predicted = predictions,
+  Actual = testdata$Watershed,
+  Confidence = confidence_scores
+)
+
+# MAke both factors
+results$Predicted <- as.factor(results$Predicted)
+results$Actual <- as.factor(results$Actual)
+
+# Compute confusion matrix
+conf_matrix <- confusionMatrix(results$Predicted, results$Actual)
+
+# Display results
+print(results)  # View first few rows of predictions with confidence
+print(conf_matrix)    # View model performance
+
+# What proportion of results are CORRECT AND above 90% 
+correct_results <- results[results$Predicted == results$Actual,]
+correct_results_above_90 <- correct_results[correct_results$Confidence > 0.7,]
+correct_proportion <- nrow(correct_results_above_90)/nrow(results)
+
+print(correct_proportion)
+
+# Create boxplots of confidence scores by correct classification colored by class 
+results$Correct <- results$Predicted == results$Actual
+
+ggplot(results, aes(x = Actual, y = Confidence, fill = Correct, alpha = 0.5)) +
+  geom_boxplot() +
+  scale_fill_manual(values = c("TRUE" = "dodgerblue4", "FALSE" = "firebrick")) +
+  theme_minimal() +
+  labs(title = "Confidence Scores by Correct Classification",
+       x = "Actual Watershed",
+       y = "Confidence Score",
+       fill = "Correct Classification")
+
+
+################################## 
+############ Converting to probability 
+
+##################### For the Test Dataset #####################
+# Step 1: Convert labels to binary ("Kusko" vs. "nonKusko")
+results_modified <- results %>%
+  mutate(Actual = ifelse(Actual == "Kusko", "Kusko", "nonKusko"))
+
+# Step 2: Bin the confidence scores into intervals from 0.0 to 1.0 
+results_modified$ConfidenceBin <- cut(
+  results_modified$Confidence, 
+  breaks = seq(0, 1, by = 0.05), 
+  include.lowest = TRUE
+)
+
+# Step 3: Calculate the number of Kusko vs. nonKusko in each bin for Actual
+confidence_table_actual <- table(results_modified$ConfidenceBin, results_modified$Actual)
+
+# Step 4: Convert the table to a data frame
+confidence_table_actual_df <- as.data.frame(confidence_table_actual)
+
+# Step 5: Rename columns for clarity
+colnames(confidence_table_actual_df) <- c("ConfidenceBin", "Actual", "Count")
+
+# Step 6: Extract the upper bound of each bin
+confidence_table_actual_df <- confidence_table_actual_df %>%
+  mutate(ConfidenceUpper = as.numeric(sub(".+,(.+)]", "\\1", ConfidenceBin)))
+
+# Step 7: Display the table of actual counts
+print(confidence_table_actual_df)
+
+# Step 8: Calculate the proportion of Kusko in each bin
+confidence_table_actual_summary <- confidence_table_actual_df %>%
+  group_by(ConfidenceUpper) %>%
+  summarize(
+    TotalCount = sum(Count), # Total number of samples in the bin
+    KuskoCount = sum(Count[Actual == "Kusko"]), # Number of "Kusko" in the bin
+    KuskoProportion = KuskoCount / TotalCount # Proportion of "Kusko"
+  )
+
+# Step 9: Display the summary table
+print(confidence_table_actual_summary)
+
+#Make any NAs 0 
+confidence_table_actual_summary[is.na(confidence_table_actual_summary)] <- 0
+
+
+# Step 10: Plot the proportion of Kusko vs. confidence bins for the test set
+ggplot(confidence_table_actual_summary, aes(x = ConfidenceUpper, y = KuskoProportion)) +
+  geom_point(size = 3, color = "dodgerblue3") +  # Scatterplot points+ 
+  geom_smooth(method = "loess", se = FALSE, color = "grey20") +  # Loess smoothing line
+  labs(
+    title = "Proportion of Actual Kusko vs. Confidence Bins (Test Set)",
+    x = "Upper Bound of Confidence Bin",
+    y = "Proportion of Actual Kusko"
+  ) +
+  theme_grey() +
+  theme(
+    plot.title = element_text(hjust = 0.5, size = 16, face = "bold"),
+    axis.title.x = element_text(size = 12),
+    axis.title.y = element_text(size = 12)
+  )
+
+filename<- paste("Scores vs. Proportions Kusko.pdf")
+
+# Export to the "Figures" folder 
+ggsave(file.path("Figures", filename), width = 8, height = 6, units = "in")
+
+##################### For the Training Dataset #####################
+# Step 1: Make predictions on the training set (both class labels and probabilities)
+train_predictions <- predict(model, traindata)
+train_probabilities <- predict(model, traindata, type = "prob")
+
+# Step 2: Compute confidence scores (highest probability for each prediction)
+train_confidence_scores <- apply(train_probabilities, 1, max)
+
+# Step 3: Create results dataframe for the training set
+train_results <- data.frame(
+  Predicted = train_predictions,
+  Actual = traindata$Watershed,
+  Confidence = train_confidence_scores
+)
+
+# Step 4: Convert Predicted and Actual to factors
+train_results$Predicted <- as.factor(train_results$Predicted)
+train_results$Actual <- as.factor(train_results$Actual)
+
+# Step 5: Convert labels to binary ("Kusko" vs. "nonKusko") for the training set
+train_results_modified <- train_results %>%
+  mutate(Actual = ifelse(Actual == "Kusko", "Kusko", "nonKusko"))
+
+# Step 6: Bin the confidence scores into intervals from 0.0 to 1.0 by 0.1
+train_results_modified$ConfidenceBin <- cut(
+  train_results_modified$Confidence, 
+  breaks = seq(0, 1, by = 0.1), 
+  include.lowest = TRUE
+)
+
+# Step 7: Calculate the number of Kusko vs. nonKusko in each bin for Actual
+train_confidence_table_actual <- table(train_results_modified$ConfidenceBin, train_results_modified$Actual)
+
+# Step 8: Convert the table to a data frame
+train_confidence_table_actual_df <- as.data.frame(train_confidence_table_actual)
+
+# Step 9: Rename columns for clarity
+colnames(train_confidence_table_actual_df) <- c("ConfidenceBin", "Actual", "Count")
+
+# Step 10: Extract the upper bound of each bin
+train_confidence_table_actual_df <- train_confidence_table_actual_df %>%
+  mutate(ConfidenceUpper = as.numeric(sub(".+,(.+)]", "\\1", ConfidenceBin)))
+
+# Step 11: Calculate the proportion of Kusko in each bin for the training set
+train_confidence_table_actual_summary <- train_confidence_table_actual_df %>%
+  group_by(ConfidenceUpper) %>%
+  summarize(
+    TotalCount = sum(Count), # Total number of samples in the bin
+    KuskoCount = sum(Count[Actual == "Kusko"]), # Number of "Kusko" in the bin
+    KuskoProportion = KuskoCount / TotalCount # Proportion of "Kusko"
+  )
+
+# Step 12: Display the summary table for the training set
+print(train_confidence_table_actual_summary)
+
+# Step 13: Plot the proportion of Kusko vs. confidence bins for the training set
+ggplot(train_confidence_table_actual_summary, aes(x = ConfidenceUpper, y = KuskoProportion)) +
+  geom_point(size = 3, color = "blue") +  # Scatterplot points
+  geom_smooth(method = "loess", se = TRUE, color = "red", linetype = "dashed") +  # Smooth line
+  labs(
+    title = "Proportion of Actual Kusko vs. Confidence Bins (Training Set)",
+    x = "Upper Bound of Confidence Bin",
+    y = "Proportion of Actual Kusko"
+  ) +
+  theme_minimal() +
+  theme(
+    plot.title = element_text(hjust = 0.5, size = 16, face = "bold"),
+    axis.title.x = element_text(size = 12),
+    axis.title.y = element_text(size = 12)
+  )
+
+
+
+#####################################################################################
+
+
 
 ####################### ML LOOP 
 # Load necessary libraries
