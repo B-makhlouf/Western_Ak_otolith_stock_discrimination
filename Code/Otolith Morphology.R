@@ -1,5 +1,4 @@
 
-
 library(dplyr)
 library(shapeR)
 library(ggplot2)
@@ -31,17 +30,6 @@ align_outlines <- function(outlines) {
 yk_aligned <- align_outlines(yk_outlines)
 kk_aligned <- align_outlines(kk_outlines)
 nk_aligned <- align_outlines(nk_outlines)
-
-
-
-
-
-
-
-
-
-
-
 
 
 # Initialize an empty list to store the data
