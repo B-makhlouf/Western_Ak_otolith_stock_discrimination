@@ -3,16 +3,23 @@
 
 #devtools::install_github("geomorphR/geomorph")
 #install.packages("rgl")
-
-# install.packages("devtools")
-#devtools::install_github("MomX/Momocs")
+#install.packages("devtools")
+devtools::install_github("MomX/Momocs")
 #install.packages("shapeR")
 #install.packages("tidyverse")
 #install.packages("shapeR")
+install.packages("Momocs")
+remove.packages("Momocs")
+install.packages("ggbiplot")
+install.packages("pheatmap")
+install.packages("plotly")
+
 library(tidyverse)
 library(shapeR)
 library(Momocs)
-install.packages("Momocs")
+library(ggbiplot)
+library(plotly)
+
 
 
 # remove everythng but shape and outlines only 
@@ -47,10 +54,18 @@ watershed <- watershed[-badOtos_indices]
 
 # Randomly choose 20 watershed indices from each watershed
 indices <- c(
-  sample(which(watershed == "Kuskokwim"), 10),
-  sample(which(watershed == "Nushagak"), 10),
-  sample(which(watershed == "Yukon"), 10)
+  sample(which(watershed == "Kuskokwim"), 80),
+  sample(which(watershed == "Nushagak"), 80),
+  sample(which(watershed == "Yukon"), 80)
 )
+
+### IF I want to select all indices 
+indices <- c(
+  which(watershed == "Kuskokwim"),
+  which(watershed == "Nushagak"),
+  which(watershed == "Yukon")
+)
+
 
 # Subsample all outlines, picnames, and watershed to these indices
 filtered_outlines <- filtered_outlines[indices]
@@ -69,40 +84,110 @@ for (i in seq_along(filtered_outlines)) {
   coo[[i]] <- cbind(x, y)
 }
 
-# Ensure `fac` has the correct number of rows
-fac <- fac[1:length(coo), ]
-
-# Verify lengths
-print(length(coo))  # Should match nrow(fac)
-print(nrow(fac))    # Should match length(coo)
-
 # Create the "Coo" object
 OtoOutlines <- Out(coo, fac)
 
 # Visualize raw outlines
 stack(OtoOutlines)
 
-# Add landmarks
-OtoOutlinesldk <- def_ldk(OtoOutlines, 1)
-OtoOutlinesldk <- add_ldk(OtoOutlinesldk,1)
+# Perform elliptical Fourier transformation on an individual 
+coo_oscillo(OtoOutlines[4],"efourier")
 
-# Visualize outlines with landmarks
-stack(OtoOutlinesldk)
+## Elliptical Fourier Analysis 
+Oto.f<- efourier(OtoOutlines, nb.h = 10, norm = TRUE)
+## nb.h is the # of harmonics
+
+boxplot(Oto.f) #boxplot of harmonics 
+Oto.p<- PCA(Oto.al) # run a PCA 
+plot(Oto.p, ~watershed) #Plot the PCA 
+
+## GGbiplot
+ggbiplot(Oto.p, obs.scale = 1, var.scale = 2, groups = Oto.f$watershed, ellipse = TRUE ,ellipse.linewidth = .3, ellipse.alpha = .1, circle = FALSE) 
+
+# 3d Plot 
+plot_ly(
+  x = Oto.p$x[,1], 
+  y = Oto.p$x[,2], 
+  z = Oto.p$x[,3], 
+  type = "scatter3d", 
+  mode = "markers", 
+  marker = list(size = 3),  # Adjust size here
+  color = Oto.f$watershed
+)
+
+# make watershed a factor 
+Oto.f$watershed <- as.factor(Oto.f$watershed)
+watershed_colors <- rainbow(length(levels(Oto.f$watershed)))[Oto.f$watershed]
+
+#### Try the same thing, without the first harmonic
+Oto.f.2 <- rm_harm(Oto.f, 1)
+Oto.p.2<- PCA(Oto.f.2)
+plot(Oto.p.2, ~watershed)
+
+## try to align 
+pile(OtoOutlines)
+options(Momocs_verbose = FALSE)
+Oto.al<-fgProcrustes(OtoOutlines) ### Doesnt work because all of the outlines dont have the same size 
+
+
+panel(OtoOutlines, fac = "watershed", names = FALSE)
+scree_plot(Oto.p) #Scree plot, contribution of PC?
+boxplot(Oto.p, 1) # UNCLEAR, boxplot?
+PCcontrib(Oto.p,1:8) #Visual contribution of PC
+
+##### Linear Discrimination Analysis. 
+
+oto.l<- LDA(Oto.f, ~watershed) #Linear Discrimination Analysis
+oto.l
+oto.l %>% summary
+
+plot_CV(oto.l)
+
+
+MANOVA(Oto.p, ~watershed) #MANOVA
+MANOVA_PW(Oto.p, ~watershed) #MANOVA pairwise
+
+### Heirarchial clustering 
+CLUST(Oto.p, ~watershed) #Heirarchial clustering
+
+## K means clustering 
+KMEANS(Oto.p, centers = 3)
+
+### Mean Shapes 
+Oto.f %>% MSHAPES %>% coo_plot() # MEan shape for all 
+Oto.ms<- MSHAPES(Oto.f, ~watershed) #Mean shape for each watershed
+
+Out(Oto.ms$shp) %>% panel(names = TRUE) # Mean shapes by watershed
+
+### Put all three on one plot (hypothetically)
+Nush<- Oto.ms$shp$Nushagak %>% coo_plot(border = "red")
+Yuk<- Oto.ms$shp$Yukon %>% coo_draw(border = "dodgerblue2")
+Kus<- Oto.ms$shp$Kuskokwim %>% coo_draw(border = "darkgreen")
+
+# Direct comparison of them #Example 
+#leaves <- shapes %>% slice(grep("leaf", names(shapes))) %$% coo
+
+OtoOutlines %>% efourier(6) %>% MSHAPES(~watershed) %>% plot_MSHAPES()
+
+
+
+
+?ClUST
+# Add landmarks
+OtoOutlinesldk <- def_ldk(OtoOutlines, 2)
+OtoOutlinesldk <- add_ldk(OtoOutlinesldk,1)
 
 # Align outlines using Procrustes analysis
 OtoOutlines_aligned <- fgProcrustes(OtoOutlinesldk)
-
 
 # Visualize aligned outlines
 stack(OtoOutlines_aligned)
 
 # Slide outlines to a common starting point
-OtoOutlines_aligned <- coo_slide(OtoOutlines_aligned, ldk = 2)
+OtoOutlines_aligned <- coo_slide(OtoOutlines_aligned, ldk = 1)
 
 # Perform elliptical Fourier transformation
-OtoOutlines_aligned <- efourier(OtoOutlines, 6, norm = FALSE)
-coo_check(OtoOutlines)
-
+OtoOutlines_aligned <- efourier(OtoOutlines, 10, norm = FALSE)
 
 # Perform Principal Component Analysis
 OtoOutlines_pca <- PCA(OtoOutlines_aligned)
@@ -117,52 +202,17 @@ OtoOutlines_lda <- LDA(OtoOutlines_pca, ~watershed)
 # Plot LDA results
 plot_CV(OtoOutlines_lda)
 
-#hpow(OtoOutlines_lda)
-install.packages("FactoClass")
-library(FactoClass)
+#Harmonics contribution 
+hcontrib(OtoOutlines_aligned)
+
+panel(OtoOutlines, fac = "watershed", names = FALSE)
+
+
 library(ade4)
-
-fourier<- efourier(OtoOutlines, 6, norm = FALSE)
-dudi.plot(fourier, pos.shp = "circle", neighbors = TRUE)
-
-
-dudi.plot()
-
-dudi.plot(OtoOutlines)
-#hqual(
-#  OtoOutlines_aligned, 
-#  method = "eFourier", 
-#  id = 16, 
-#  harm.range = 1:49,
-#  palette = col.sari, 
-#  plot.method = "panel"
-#)
-
+botF <- efourier(bot, nb.h = 20)
+botF
+hcontrib(botF, harm.range = 1:8)
+boxplot(botF)
 
 data(bot)
-botF <- efourier(bot, nb.h=32)
-botD <- pca(botF)
-dudi.plot(botD)
-dudi.plot(botD, 1, title="botD with no class but with ellipses")
-dudi.plot(botD, fac=1, chull=TRUE, rug=FALSE, shape=FALSE, title="botD with convex hull")
-dudi.plot(botD, fac=1, ellipses=FALSE, neighbors=TRUE, shapes=FALSE, star=FALSE,
-          col.nei="black", title="botD with Gabriel's neighboring graph")
-dudi.plot(botD, labels=TRUE, points=FALSE, boxes=FALSE, shapes=TRUE, pos.shp="li",
-          title="botD with labels and reconstructed shapes")
-dudi.plot(botD, 1, points=FALSE, labels=TRUE, boxes=FALSE, shapes=FALSE,
-          title="botD with labels and ellipse")
-dudi.plot(botD, 1, arrows=TRUE, dratio.arrow=0.2, shapes=FALSE,
-          title="botD with harmonic correlations")
-# With some fake factors
-botD <- pca(botF)
-dudi.plot(botD, "type", palette=col.gallus,
-          rotate.shp=pi/2, title="botD with classes") # rotated shapes
-dudi.plot(botD, "type", palette=col.gallus, eigen=TRUE, title="botD with eigen values")
-dudi.plot(botD, "type", pos.shp="full", title="botD with shapes(1)")
-dudi.plot(botD, "type", pos.shp="range", scale.shp=0.5, shapes=TRUE,
-          border.shp="firebrick3", col.shp=NA, center.orig=TRUE, 
-          zoom.plot=0.8, title="botD with shapes(2)")
-dudi.plot(botD, "type", pos.shp="circle", center.orig=TRUE, title="botD with shapes(3)")
-dudi.plot(botD, "type", pos.shp="range", scale.shp=0.5, title="botD with shapes(4)")
-dudi.plot(botD, pos.shp=as.matrix(expand.grid(seq(-0.05, 0.05, 0.025),
-                                              seq(-0.05, 0.05, 0.025)))) # an example with a matrix provided to pos.shp
+hquant(bot)
