@@ -9,11 +9,20 @@ library(ggplot2)
 library(dplyr)
 library(zoo)
 library(caret)
+#install.packages("cowplot")
+library(cowplot)
 
 ### This script contains the function which preprocesses all of the raw data into a form that can be used for PCA/ML/Etc.  
 source(here("/Users/benjaminmakhlouf/Research_repos/Western_Ak_otolith_stock_discrimination/Code/Helper Code/Raw_Data_Preprocessing.R"))
 ### This script contains helper functions to run PCA and a few important figures
 source(here("/Users/benjaminmakhlouf/Research_repos/Western_Ak_otolith_stock_discrimination/Code/Helper Code/PCA_functions.R"))
+
+
+QC_data<- read.csv(here("Data/qc_results.csv"))
+
+
+
+
 
 ################################################################################
 ################################################################################
@@ -26,7 +35,7 @@ source(here("/Users/benjaminmakhlouf/Research_repos/Western_Ak_otolith_stock_dis
 #run a MA, 
 #collect metadata
 #add to a matrix 
-processed_data<-process_trimmed_data(microns_before = 0, microns_after = 50) 
+processed_data<-process_trimmed_data(microns_before = 200, microns_after = 300) 
 
 ############# Here, all the data has been preprocessed. ########################
 
@@ -40,9 +49,25 @@ metadata <- tibble(
 
 iso_data_raw<- processed_data$measurement_array #RAW interpolated data 
 iso_data_MA<- processed_data$moving_avg_array # Moving average data
+iso_data_MA <- iso_data_MA[, colSums(is.na(iso_data_MA)) == 0] # MA has tails of NA, remove
 iso_data_GAM<- processed_data$gam_smoothed_array # GAM smoothed data
 
-iso_data_MA <- iso_data_MA[, colSums(is.na(iso_data_MA)) == 0] # MA has tails of NA, remove
+
+#identifier is the Fish ID without "_trimlocations"
+QC_data$Identifier<- gsub("_trimLocations", "", QC_data$Fish_ID)
+
+# list out the Identifiers which are QC Grade "Redo" or "Delete"
+redo_delete<- QC_data %>% filter(QC_Grade == "Redo" | QC_Grade == "Delete" ) %>% select(Identifier)
+
+# Find the indices in metadata with Fish_IDs that are in the redo_delete list
+redo_delete_indices<- which(metadata$Fish_id %in% redo_delete$Identifier)
+
+# Remove the indices from the metadata and the iso_data
+metadata<- metadata[-redo_delete_indices,]
+iso_data_raw<- iso_data_raw[-redo_delete_indices,]
+iso_data_MA<- iso_data_MA[-redo_delete_indices,]
+iso_data_GAM<- iso_data_GAM[-redo_delete_indices,]
+
 
 all_data_combined_raw<- cbind(metadata, iso_data_raw) # combine the metadata and the raw data
 write.csv(all_data_combined_raw, file = here("Data/Processed/all_data_combined_RAW.csv"))
@@ -66,7 +91,7 @@ iso_data_raw<- read.csv(here("Data/Processed/all_data_combined_RAW.csv"))
 iso_data_MA<- read.csv(here("Data/Processed/all_data_combined_MA.csv"))
 iso_data_GAM<- read.csv(here("Data/Processed/all_data_combined_GAM.csv"))
 
-iso_data<- iso_data_GAM ### Choose which set you want for analysis, call it just "iso_data"
+iso_data<- iso_data_raw ### Choose which set you want for analysis, call it just "iso_data"
 
 # re-separate iso and metadata 
 metadata<- iso_data[,1:5]
@@ -99,6 +124,18 @@ PCA_full<- run_pca(selected_data, selected_metadata) #add all the metadata
 natalIsoPCAPlot<-pca_natal_plot(PCA_full,1,2)
 print(natalIsoPCAPlot)
 
+library(plotly)
+# 3d PCA plot with watershed colored using plotly
+plot_ly(
+  x = PCA_full$PC2, 
+  y = PCA_full$PC3,, 
+  z = PCA_full$PC4, 
+  type = "scatter3d", 
+  mode = "markers", 
+  marker = list(size = 3),  # Adjust size here
+  color = PCA_full$Watershed
+)
+
 ### Feature importance visualized along the timeseries 
 ## Changing the plot type will change the visualization (options are "line" or "bar")
 feature_figure<- plot_pca_loadings(PCA_raw, plot_type = "line")
@@ -130,6 +167,15 @@ model <- train(Watershed ~ ., data = traindata, method = "rf", trControl = contr
 predictions <- predict(model, testdata)
 probabilities <- predict(model, testdata, type = "prob")
 
+# Create a df with probabilities and ID 
+ids<- metadata[-trainIndex,]
+ids<- ids$Fish_id
+idScores<- data.frame(ids, probabilities)
+
+
+
+
+
 # Compute confidence scores (highest probability for each prediction)
 confidence_scores <- apply(probabilities, 1, max)
 
@@ -139,6 +185,10 @@ results <- data.frame(
   Actual = testdata$Watershed,
   Confidence = confidence_scores
 )
+
+idScores$Predicted<- results$Predicted
+idScores$Actual<- results$Actual
+idScores$Correct<- idScores$Predicted == idScores$Actual
 
 # MAke both factors
 results$Predicted <- as.factor(results$Predicted)
@@ -151,33 +201,72 @@ conf_matrix <- confusionMatrix(results$Predicted, results$Actual)
 print(results)  # View first few rows of predictions with confidence
 print(conf_matrix)    # View model performance
 
-# What proportion of results are CORRECT AND above 90% 
-correct_results <- results[results$Predicted == results$Actual,]
-correct_results_above_90 <- correct_results[correct_results$Confidence > 0.7,]
-correct_proportion <- nrow(correct_results_above_90)/nrow(results)
+# Histogram for correctly classified Kusko
+plot_correct_Kusko <- ggplot(results[results$Actual == "Kusko" & results$Correct == TRUE,], 
+                             aes(x = Confidence)) +
+  geom_histogram(fill = "blue", alpha = 0.5, binwidth = 0.05, color = "black") +
+  labs(title = "Actually Kusko, classified as Kusko", x = "Score", y = "Frequency") +
+  theme_minimal()
 
-print(correct_proportion)
+# Histogram for incorrectly classified Kusko
+plot_incorrect_Kusko <- ggplot(results[results$Actual == "Kusko" & results$Correct == FALSE,], 
+                               aes(x = Confidence)) +
+  geom_histogram(fill = "red", alpha = 0.5, binwidth = 0.05, color = "black") +
+  labs(title = "Actually Kusko, classified as other", x = "Score", y = "Frequency") +
+  theme_minimal()
 
-# Create boxplots of confidence scores by correct classification colored by class 
-results$Correct <- results$Predicted == results$Actual
+# Histogram for correctly classified Yukon
+plot_correct_Yukon <- ggplot(results[results$Actual == "Yukon" & results$Correct == TRUE,], 
+                             aes(x = Confidence)) +
+  geom_histogram(fill = "blue", alpha = 0.5, binwidth = 0.05, color = "black") +
+  labs(title = "Actually Yukon, classified as Yukon", x = "Score", y = "Frequency") +
+  theme_minimal()
 
-ggplot(results, aes(x = Actual, y = Confidence, fill = Correct, alpha = 0.5)) +
-  geom_boxplot() +
-  scale_fill_manual(values = c("TRUE" = "dodgerblue4", "FALSE" = "firebrick")) +
-  theme_minimal() +
-  labs(title = "Confidence Scores by Correct Classification",
-       x = "Actual Watershed",
-       y = "Confidence Score",
-       fill = "Correct Classification")
+# Histogram for incorrectly classified Yukon
+plot_incorrect_Yukon <- ggplot(results[results$Actual == "Yukon" & results$Correct == FALSE,], 
+                               aes(x = Confidence)) +
+  geom_histogram(fill = "red", alpha = 0.5, binwidth = 0.05, color = "black") +
+  labs(title = "Actually Yukon, classified as other", x = "Score", y = "Frequency") +
+  theme_minimal()
+
+# Histogram for correctly classified Nushagak
+plot_correct_Nushagak <- ggplot(results[results$Actual == "Nush" & results$Correct == TRUE,], 
+                                aes(x = Confidence)) +
+  geom_histogram(fill = "blue", alpha = 0.5, binwidth = 0.05, color = "black") +
+  labs(title = "Actually Nushagak, classified as Nushagak", x = "Score", y = "Frequency") +
+  theme_minimal()
+
+# Histogram for incorrectly classified Nushagak
+plot_incorrect_Nushagak <- ggplot(results[results$Actual == "Nush" & results$Correct == FALSE,], 
+                                  aes(x = Confidence)) +
+  geom_histogram(fill = "red", alpha = 0.5, binwidth = 0.05, color = "black") +
+  labs(title = "Actually Nushagak, classified as other", x = "Score", y = "Frequency") +
+  theme_minimal()
+
+# Combine the plots into one figure using cowplot
+final_plot <- plot_grid(
+  plot_correct_Kusko, plot_incorrect_Kusko, 
+  plot_correct_Yukon, plot_incorrect_Yukon, 
+  plot_correct_Nushagak, plot_incorrect_Nushagak, 
+  ncol = 2
+)
+
+# Display the final combined plot
+print(final_plot)
 
 
 ################################## 
 ############ Converting to probability 
 
+
+
+
 ##################### For the Test Dataset #####################
 # Step 1: Convert labels to binary ("Kusko" vs. "nonKusko")
 results_modified <- results %>%
-  mutate(Actual = ifelse(Actual == "Kusko", "Kusko", "nonKusko"))
+  mutate(Actual = ifelse(Actual == "Kusko", "Kusko", "nonKusko")) %>%
+  filter(Predicted == "Kusko")
+
 
 # Step 2: Bin the confidence scores into intervals from 0.0 to 1.0 
 results_modified$ConfidenceBin <- cut(
@@ -238,6 +327,20 @@ filename<- paste("Scores vs. Proportions Kusko.pdf")
 
 # Export to the "Figures" folder 
 ggsave(file.path("Figures", filename), width = 8, height = 6, units = "in")
+
+
+idScores_filtered<- idScores %>% 
+  filter(Actual == "Kusko" & Correct == "FALSE") 
+
+
+
+
+
+
+
+
+
+
 
 ##################### For the Training Dataset #####################
 # Step 1: Make predictions on the training set (both class labels and probabilities)

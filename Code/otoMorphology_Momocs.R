@@ -4,23 +4,21 @@
 #devtools::install_github("geomorphR/geomorph")
 #install.packages("rgl")
 #install.packages("devtools")
-devtools::install_github("MomX/Momocs")
+# devtools::install_github("MomX/Momocs")
 #install.packages("shapeR")
 #install.packages("tidyverse")
 #install.packages("shapeR")
-install.packages("Momocs")
-remove.packages("Momocs")
-install.packages("ggbiplot")
-install.packages("pheatmap")
-install.packages("plotly")
+#install.packages("Momocs")
+#remove.packages("Momocs")
+# install.packages("ggbiplot")
+# install.packages("pheatmap")
+# install.packages("plotly")
 
 library(tidyverse)
 library(shapeR)
 library(Momocs)
 library(ggbiplot)
 library(plotly)
-
-
 
 # remove everythng but shape and outlines only 
 rm (list = ls()[!ls() %in% c("shape", "outlinesonly")])
@@ -51,6 +49,8 @@ badOtos_indices <- which(picnames %in% badOtos)
 filtered_outlines <- all_outlines[-badOtos_indices]
 picnames <- picnames[-badOtos_indices]
 watershed <- watershed[-badOtos_indices]
+
+table(watershed)
 
 # Randomly choose 20 watershed indices from each watershed
 indices <- c(
@@ -87,22 +87,28 @@ for (i in seq_along(filtered_outlines)) {
 # Create the "Coo" object
 OtoOutlines <- Out(coo, fac)
 
+################################################################################
+################################################################################
+################################################################################
+# Analysis 
+
 # Visualize raw outlines
 stack(OtoOutlines)
 
 # Perform elliptical Fourier transformation on an individual 
 coo_oscillo(OtoOutlines[4],"efourier")
 
-## Elliptical Fourier Analysis 
-Oto.f<- efourier(OtoOutlines, nb.h = 10, norm = TRUE)
+## Elliptical Fourier Analysis , with normalization being FALSE 
 ## nb.h is the # of harmonics
+Oto.f<- efourier(OtoOutlines, nb.h = 10, norm = TRUE)
+
 
 boxplot(Oto.f) #boxplot of harmonics 
-Oto.p<- PCA(Oto.al) # run a PCA 
+Oto.p<- PCA(Oto.f) # run a PCA 
 plot(Oto.p, ~watershed) #Plot the PCA 
 
 ## GGbiplot
-ggbiplot(Oto.p, obs.scale = 1, var.scale = 2, groups = Oto.f$watershed, ellipse = TRUE ,ellipse.linewidth = .3, ellipse.alpha = .1, circle = FALSE) 
+ggbiplot(Oto.p, obs.scale = .5, var.scale = .5, groups = Oto.f$watershed, ellipse = TRUE ,ellipse.linewidth = .3, ellipse.alpha = .1, circle = FALSE) 
 
 # 3d Plot 
 plot_ly(
@@ -117,46 +123,47 @@ plot_ly(
 
 # make watershed a factor 
 Oto.f$watershed <- as.factor(Oto.f$watershed)
-watershed_colors <- rainbow(length(levels(Oto.f$watershed)))[Oto.f$watershed]
 
-#### Try the same thing, without the first harmonic
+#### Try the PCA, without the first harmonic
 Oto.f.2 <- rm_harm(Oto.f, 1)
 Oto.p.2<- PCA(Oto.f.2)
 plot(Oto.p.2, ~watershed)
 
+
 ## try to align 
-pile(OtoOutlines)
-options(Momocs_verbose = FALSE)
-Oto.al<-fgProcrustes(OtoOutlines) ### Doesnt work because all of the outlines dont have the same size 
+#Oto.al<-fgProcrustes(OtoOutlines) ### Doesnt work because all of the outlines dont have the same size 
 
 
 panel(OtoOutlines, fac = "watershed", names = FALSE)
 scree_plot(Oto.p) #Scree plot, contribution of PC?
-boxplot(Oto.p, 1) # UNCLEAR, boxplot?
+#boxplot(Oto.p, 1) # UNCLEAR, boxplot?
+
 PCcontrib(Oto.p,1:8) #Visual contribution of PC
 
-##### Linear Discrimination Analysis. 
 
+##### Linear Discrimination Analysis. 
 oto.l<- LDA(Oto.f, ~watershed) #Linear Discrimination Analysis
 oto.l
 oto.l %>% summary
+plot_CV(oto.l) #Confusion matrix
 
-plot_CV(oto.l)
 
-
-MANOVA(Oto.p, ~watershed) #MANOVA
+MANOVA(Oto.p, ~watershed) #MANOVA 
+## Very significant difference in PCA between Watersheds
 MANOVA_PW(Oto.p, ~watershed) #MANOVA pairwise
+### No dif between Yukon and Kusko, but significant difference otherwise
+
+
 
 ### Heirarchial clustering 
 CLUST(Oto.p, ~watershed) #Heirarchial clustering
 
 ## K means clustering 
-KMEANS(Oto.p, centers = 3)
+KMEANS(Oto.p, centers = 10)
 
-### Mean Shapes 
+### Mean Shapes, individually 
 Oto.f %>% MSHAPES %>% coo_plot() # MEan shape for all 
 Oto.ms<- MSHAPES(Oto.f, ~watershed) #Mean shape for each watershed
-
 Out(Oto.ms$shp) %>% panel(names = TRUE) # Mean shapes by watershed
 
 ### Put all three on one plot (hypothetically)
@@ -170,49 +177,40 @@ Kus<- Oto.ms$shp$Kuskokwim %>% coo_draw(border = "darkgreen")
 OtoOutlines %>% efourier(6) %>% MSHAPES(~watershed) %>% plot_MSHAPES()
 
 
+# 
+# 
+# # Add landmarks
+# OtoOutlinesldk <- def_ldk(OtoOutlines, 2)
+# OtoOutlinesldk <- add_ldk(OtoOutlinesldk,1)
+# 
+# # Align outlines using Procrustes analysis
+# OtoOutlines_aligned <- fgProcrustes(OtoOutlinesldk)
+# 
+# # Visualize aligned outlines
+# stack(OtoOutlines_aligned)
+# 
+# # Slide outlines to a common starting point
+# OtoOutlines_aligned <- coo_slide(OtoOutlines_aligned, ldk = 1)
+# 
+# # Perform elliptical Fourier transformation
+# OtoOutlines_aligned <- efourier(OtoOutlines, 10, norm = FALSE)
+# 
+# # Perform Principal Component Analysis
+# OtoOutlines_pca <- PCA(OtoOutlines_aligned)
+# 
+# # Plot PCA results
+# plot_PCA(OtoOutlines_pca)
+# plot_PCA(OtoOutlines_pca, ~watershed)
+# 
+# # Perform Linear Discriminant Analysis
+# OtoOutlines_lda <- LDA(OtoOutlines_pca, ~watershed)
+# 
+# # Plot LDA results
+# plot_CV(OtoOutlines_lda)
+# 
+# #Harmonics contribution 
+# hcontrib(OtoOutlines_aligned)
+# 
+# panel(OtoOutlines, fac = "watershed", names = FALSE)
 
 
-?ClUST
-# Add landmarks
-OtoOutlinesldk <- def_ldk(OtoOutlines, 2)
-OtoOutlinesldk <- add_ldk(OtoOutlinesldk,1)
-
-# Align outlines using Procrustes analysis
-OtoOutlines_aligned <- fgProcrustes(OtoOutlinesldk)
-
-# Visualize aligned outlines
-stack(OtoOutlines_aligned)
-
-# Slide outlines to a common starting point
-OtoOutlines_aligned <- coo_slide(OtoOutlines_aligned, ldk = 1)
-
-# Perform elliptical Fourier transformation
-OtoOutlines_aligned <- efourier(OtoOutlines, 10, norm = FALSE)
-
-# Perform Principal Component Analysis
-OtoOutlines_pca <- PCA(OtoOutlines_aligned)
-
-# Plot PCA results
-plot_PCA(OtoOutlines_pca)
-plot_PCA(OtoOutlines_pca, ~watershed)
-
-# Perform Linear Discriminant Analysis
-OtoOutlines_lda <- LDA(OtoOutlines_pca, ~watershed)
-
-# Plot LDA results
-plot_CV(OtoOutlines_lda)
-
-#Harmonics contribution 
-hcontrib(OtoOutlines_aligned)
-
-panel(OtoOutlines, fac = "watershed", names = FALSE)
-
-
-library(ade4)
-botF <- efourier(bot, nb.h = 20)
-botF
-hcontrib(botF, harm.range = 1:8)
-boxplot(botF)
-
-data(bot)
-hquant(bot)
