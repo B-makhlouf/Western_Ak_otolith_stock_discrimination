@@ -91,7 +91,11 @@ iso_data_raw<- read.csv(here("Data/Processed/all_data_combined_RAW.csv"))
 iso_data_MA<- read.csv(here("Data/Processed/all_data_combined_MA.csv"))
 iso_data_GAM<- read.csv(here("Data/Processed/all_data_combined_GAM.csv"))
 
+
+
 iso_data<- iso_data_raw ### Choose which set you want for analysis, call it just "iso_data"
+
+
 
 # re-separate iso and metadata 
 metadata<- iso_data[,1:5]
@@ -172,10 +176,6 @@ ids<- metadata[-trainIndex,]
 ids<- ids$Fish_id
 idScores<- data.frame(ids, probabilities)
 
-
-
-
-
 # Compute confidence scores (highest probability for each prediction)
 confidence_scores <- apply(probabilities, 1, max)
 
@@ -196,6 +196,12 @@ results$Actual <- as.factor(results$Actual)
 
 # Compute confusion matrix
 conf_matrix <- confusionMatrix(results$Predicted, results$Actual)
+
+
+
+
+
+
 
 # Display results
 print(results)  # View first few rows of predictions with confidence

@@ -65,6 +65,43 @@ pca_natal_plot <- function(PCA_full, pca_x = 1, pca_y = 2) {
 }
 
 
+############ PCA PLOT 
+
+pca_plot <- function(PCA_full, pca_x = 1, pca_y = 2) {
+  # Convert numeric input to column names
+  pca_x_col <- paste0("PC", pca_x)
+  pca_y_col <- paste0("PC", pca_y)
+  
+  # filter within -100 and 100 
+  PCA_full <- PCA_full %>%
+    filter(!!sym(pca_x_col) > -100 & !!sym(pca_x_col) < 100) %>%
+    filter(!!sym(pca_y_col) > -100 & !!sym(pca_y_col) < 100)
+  
+  
+  # PCA plot by Watershed
+  pca_plot <- ggplot(PCA_full, aes_string(x = pca_x_col, y = pca_y_col, color = "Watershed")) +
+    geom_point(size = 2, alpha = .2) +
+    theme_classic() +
+    labs(title = "PCA of Iso Values by Watershed",
+         x = pca_x_col,
+         y = pca_y_col) +
+    theme(legend.title = element_blank())
+  
+  # PCA plot by Natal Iso
+  pca_plot_natal_iso <- ggplot(PCA_full, aes_string(x = pca_x_col, y = pca_y_col, color = "Natal_iso")) +
+    geom_point(size = 2, alpha = .9) +
+    theme_classic() +
+    labs(title = "PCA of Iso Values by Natal Iso",
+         x = pca_x_col,
+         y = pca_y_col) +
+    scale_color_viridis_c(option = "C") +
+    theme(legend.title = element_blank())
+  
+  
+  return(pca_plot)
+}
+
+
 
 ### This function displays the feature importance along the timeseries, either as a "line" or a " bar graph" 
 
@@ -144,3 +181,25 @@ plot_pca_loadings <- function(PCA_raw, plot_type = "line") {
   # Default: Return an error if an invalid plot type is specified
   stop("Invalid plot type. Please use 'line' or 'bar'.")
 }
+
+
+## Scree plot of PCA 
+scree_plot <- function(pca_result) {
+  scree_values <- PCA_raw$sdev^2
+  prop_variance <- scree_values / sum(scree_values)
+  
+  # do the above with ggplot
+  scree_df <- data.frame(PC = 1:length(scree_values), 
+                         prop_variance = prop_variance)
+  
+  scree_gg <- ggplot(scree_df[1:10, ], aes(x = PC, y = prop_variance)) +
+    geom_point() +
+    geom_line() +
+    labs(x = "Principal Component", 
+         y = "Proportion of Variance Explained",
+         title = "Scree Plot (First 10 Components)") +
+    theme_grey()
+  
+  return(scree_gg)
+}
+
