@@ -113,6 +113,18 @@ for (i in seq_along(all_files)) {
   })
 }
 
+
+# Create a new colum called_ likely_gen that is the name of the column with the highest value between Lower,Middle, and Upper
+QC_data$likely_gen<- apply(QC_data[, c("Lower_gen", "Middle_gen", "Upper_gen")], 1, function(x) {
+  if (all(is.na(x))) {
+    return(NA)
+  }
+  
+  names(x)[which.max(x)]
+})
+
+
+
 # write the QC data to a new fill 
 write.csv(QC_data, here("Data/Final/Metadata_and_QC.csv"), row.names = F)
   

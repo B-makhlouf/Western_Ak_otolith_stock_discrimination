@@ -1,50 +1,44 @@
 
-
-
 #### This function takes all the raw data files in the Tim_Locations folder (which have been given a trim location)
 # And processes them to be used in Classifier, PCA, DTW, etc. 
-process_trimmed_data <- function(interp_points = 1000, microns_before = 250, microns_after = 400, window_size = 60, gamma_value = 1.4) {
-  library(tidyverse)
-  library(here)
-  library(zoo)
-  library(mgcv)
+library(data.table)
+library(mgcv)
+library(zoo)
+library(progressr)
+
+library(pbapply)  # For progress bar
+install.packages("pbapply")
+
+process_trimmed_data <- function(interp_points = 1000, window_size = 60, gamma_value = 1.4) {
   
-  data_directory <- here("Data/Processed/Trim_Locations")
+  data_directory <- "Data/Processed/Trim_Locations"
   files <- list.files(data_directory, full.names = TRUE, pattern = "\\.csv$")
-  results_list <- list()
   
-  for (file_path in files) {
-    cat("\nProcessing file:", file_path, "\n")  # Debugging output
+  # Use pblapply() to track progress
+  results_list <- pblapply(files, function(file_path) {
     
     ind_data <- tryCatch({
-      read_csv(file_path)
+      fread(file_path)
     }, error = function(e) {
-      cat("Error reading file:", e$message, "\n")
+      message("Error reading file: ", e$message)
       return(NULL)
     })
     
-    if (is.null(ind_data)) next  # Skip to the next file if read_csv fails
+    if (is.null(ind_data) || nrow(ind_data) < 2) return(NULL)  # Skip invalid files
     
-    # Extract metadata
+    # Extract metadata efficiently
     watershed <- ind_data$Watershed[1]
     natal_iso <- ind_data$natal_origin_iso[1]
     fish_id <- ind_data$Fish_id[1]
-    natal_iso_start <- ind_data$natal_microns_start[1]
-    natal_iso_end <- ind_data$natal_microns_end[1]
-    marine_start <- ind_data$marine_start[1]
     Year <- ind_data$Year[1]
     
-    # Trim the data
-    ind_data <- ind_data %>%
-      filter(Microns >= (natal_iso_start - microns_before) & Microns <= (marine_start + microns_after))
-    
-    # Interpolate Iso values
+    # Interpolation
     interpolated <- tryCatch({
-      if (nrow(ind_data) < 2 || all(is.na(ind_data$Iso))) {
+      if (all(is.na(ind_data$Iso))) {
         rep(NA, interp_points)
       } else {
         approx(
-          x = seq_along(ind_data$Iso),
+          x = seq_len(nrow(ind_data)),
           y = ind_data$Iso,
           xout = seq(1, nrow(ind_data), length.out = interp_points),
           method = "linear",
@@ -52,80 +46,57 @@ process_trimmed_data <- function(interp_points = 1000, microns_before = 250, mic
         )$y
       }
     }, error = function(e) {
-      cat("Error in interpolation:", e$message, "\n")
+      message("Error in interpolation: ", e$message)
       return(rep(NA, interp_points))
     })
     
-    # Compute moving average
-    moving_avg <- tryCatch({
-      rollapply(
-        interpolated,
-        width = window_size,
-        FUN = mean,
-        align = "center",
-        fill = NA
-      )
-    }, error = function(e) {
-      cat("Error in moving average:", e$message, "\n")
-      return(rep(NA, interp_points))
-    })
+    # Moving Average Calculation
+    moving_avg <- rollapply(interpolated, width = window_size, FUN = mean, align = "center", fill = NA)
     
-    # Apply GAM smoothing directly on the original interpolated Iso values
+    # GAM Smoothing
     gam_smoothed <- tryCatch({
-      valid_idx <- which(!is.na(interpolated))
-      
-      if (length(valid_idx) > 2) {  # Ensure enough data points for GAM fitting
-        df <- tibble(
-          Microns = seq_along(interpolated),  # x-axis values
-          Iso = interpolated                  # y-axis values
-        ) %>% drop_na()
+      valid_idx <- !is.na(interpolated)
+      if (sum(valid_idx) > 2) {  
+        df <- data.frame(Microns = which(valid_idx), Iso = interpolated[valid_idx])
         
         # Dynamic k calculation
-        n <- nrow(df)
-        k <- floor(15 * (n^(2/9)))
+        k <- floor(15 * (nrow(df)^(2/9)))
         
-        # Fit the GAM model
         model <- gam(Iso ~ s(Microns, bs = "tp", k = k), gamma = gamma_value, data = df)
         
-        # Predict smoothed values
-        predict(model, newdata = tibble(Microns = seq_along(interpolated)))
+        predict(model, newdata = data.frame(Microns = seq_len(interp_points)))
       } else {
-        rep(NA, interp_points)  # Return NA if not enough points
+        rep(NA, interp_points)
       }
     }, error = function(e) {
-      cat("Error in GAM smoothing:", e$message, "\n")
+      message("Error in GAM smoothing: ", e$message)
       return(rep(NA, interp_points))
     })
     
-    # Store results
-    results_list[[file_path]] <- tibble(
+    # Store results in a list
+    list(
       Fish_id = fish_id,
       Watershed = watershed,
-      Iso = list(interpolated), 
-      Moving_Avg = list(moving_avg),
-      GAM_Smoothed = list(gam_smoothed),
+      Iso = interpolated,
+      Moving_Avg = moving_avg,
+      GAM_Smoothed = gam_smoothed,
       Natal_Iso = natal_iso,
       Year = Year
     )
-  }
+  })
   
-  # Combine results into a single tibble
-  combined_results <- bind_rows(results_list, .id = "Dataset")
+  # Remove NULLs
+  results_list <- Filter(Negate(is.null), results_list)
   
-  # Remove rows with all NA in the Iso column
-  filtered_results <- combined_results %>%
-    filter(map_lgl(Iso, ~ !all(is.na(.))))
+  # Convert results into matrices for efficiency
+  measurement_array <- do.call(rbind, lapply(results_list, `[[`, "Iso"))
+  moving_avg_array <- do.call(rbind, lapply(results_list, `[[`, "Moving_Avg"))
+  gam_smoothed_array <- do.call(rbind, lapply(results_list, `[[`, "GAM_Smoothed"))
   
-  # Create measurement arrays
-  measurement_array <- do.call(cbind, filtered_results$Iso) %>% t()  # Transpose
-  moving_avg_array <- do.call(cbind, filtered_results$Moving_Avg) %>% t()
-  gam_smoothed_array <- do.call(cbind, filtered_results$GAM_Smoothed) %>% t()
-  
-  # Extract metadata
-  ids <- filtered_results$Fish_id
-  watersheds <- filtered_results$Watershed
-  natal_origins <- filtered_results$Natal_Iso
-  years <- filtered_results$Year
+  ids <- sapply(results_list, `[[`, "Fish_id")
+  watersheds <- sapply(results_list, `[[`, "Watershed")
+  natal_origins <- sapply(results_list, `[[`, "Natal_Iso")
+  years <- sapply(results_list, `[[`, "Year")
   
   list(
     measurement_array = measurement_array,
