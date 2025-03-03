@@ -137,58 +137,75 @@ library(plotly)
 library(zoo)
 
 dataset_description <- reactive({
-  paste("Data Type:", data_type, "| Landmarks:", paste(landmark_filter, collapse = ", "))
+  paste("Data:", data_type, "| Landmarks:", paste(landmark_filter, collapse = ", "))
+})
+
+watershed_counts <- reactive({
+  PCA_full %>%
+    count(Watershed) %>%
+    arrange(desc(n))
 })
 
 # UI
 ui <- fluidPage(
-  titlePanel("PCA Analysis Viewer"),
+  titlePanel("Timeseries Classification of AYK Otolith Isotopes"),
   
-  sidebarLayout(
-    sidebarPanel(
-      width = 3,  # Reduce sidebar width to maximize plot area
-      helpText("Click on a point in the PCA plot to view Iso vs. Distance for that Fish ID."),
-      selectInput("xComp", "X Component:", choices = names(PCA_full), selected = "PC1"),
-      selectInput("yComp", "Y Component:", choices = names(PCA_full), selected = "PC2"),
-      actionButton("resetZoom", "Reset Zoom"),
-      hr(),
-      textOutput("datasetInfo")  # Display dataset information
-    ),
+  sidebarPanel(
+    width = 3,  
+    
+    
+    # Display dataset info in bold
+    strong(textOutput("datasetInfo")),  
+    hr(),
+    helpText("Click on a point in the PCA plot to view Iso vs. Distance for that Fish ID."),
+    selectInput("xComp", "X Component:", choices = names(PCA_full), selected = "PC1"),
+    selectInput("yComp", "Y Component:", choices = names(PCA_full), selected = "PC2"),
+    
+    actionButton("resetZoom", "Reset Zoom"),
+    hr(),
+    
+    # Feature Loadings Plot inside Sidebar
+    plotOutput("featurePlot", height = "300px")
+  ),
+    
     mainPanel(
-      width = 9,  # Increase main panel width for larger plots
+      width = 9,  
       tabsetPanel(
-        id = "tabs",  # Assign an ID to tabsetPanel for conditional logic
+        id = "tabs",  
         tabPanel("2D PCA", 
-                 plotOutput("pcaPlot", click = "pcaClick", 
+                 plotOutput("pcaPlot", click = "pcaClick", height = "800px",
                             brush = brushOpts(id = "pcaBrush", resetOnNew = TRUE))
         ),
         tabPanel("3D PCA", 
-                 plotlyOutput("pcaPlot3D",  height = "800px")  # Interactive 3D PCA plot
-        ),
-        tabPanel("Feature Loadings", 
-                 plotOutput("featurePlot")
+                 plotlyOutput("pcaPlot3D", height = "800px")  
         ),
         tabPanel("Classification Diagnostics",
-                 verbatimTextOutput("confMatrixText"),                 
-                 plotOutput("yearPlot"),
-                 plotOutput("qcPlot"),
-                 plotOutput("corePlot")
+                 verbatimTextOutput("confMatrixText"),
+                 fluidRow(
+                   column(4, plotOutput("yearPlot")),
+                   column(4, plotOutput("qcPlot")),
+                   column(4, plotOutput("corePlot"))
+                 )
         )
       ),
-      
       conditionalPanel(
-        condition = "input.tabs == '2D PCA'",
+        condition = "input.tabs == '2D PCA' || input.tabs == '3D PCA'",
         plotOutput("isoPlot")
       )
     )
   )
-)
+
 
 # Server
 server <- function(input, output, session) {
   
   output$datasetInfo <- renderText({
-    dataset_description()
+    description <- dataset_description()
+    counts <- watershed_counts()
+    
+    count_text <- paste(counts$Watershed, counts$n, sep = ": ", collapse = " | ")
+    paste0(description, "\n\nSamples:\n", count_text)
+    
   })
   
   zoomRegion <- reactiveValues(x = NULL, y = NULL)
@@ -208,31 +225,34 @@ server <- function(input, output, session) {
   
   output$pcaPlot <- renderPlot({
     req(PCA_full)
+    
     ggplot(PCA_full, aes_string(x = input$xComp, y = input$yComp, color = "Watershed")) +
-      geom_point(size = 2, alpha = 0.4) +
+      geom_point(size = 3, alpha = 0.6) +
       theme_classic() +
       labs(title = "PCA of Iso Values by Watershed",
            x = input$xComp,
            y = input$yComp) +
       theme(legend.title = element_blank()) +
+      scale_color_manual(values = c("Yukon" = "dodgerblue",
+                                    "Nush" = "darkorange",
+                                    "Kusko" = "#74AC64")) +  # Custom colors
       coord_cartesian(xlim = zoomRegion$x, ylim = zoomRegion$y)
   })
+  
   output$confMatrixText <- renderPrint({
     req(conf_matrix)
     print(conf_matrix)
   })
+  
   output$pcaPlot3D <- renderPlotly({
-    plot_ly(
-      x = PCA_full$PC1,
-      y = PCA_full$PC2,
-      z = PCA_full$PC3,
+    p <- plot_ly(
+      data = PCA_full,
+      x = ~PC1, y = ~PC2, z = ~PC3,
       type = "scatter3d",
       mode = "markers",
-      marker = list(
-        size = 3,  
-        opacity = 0.5  
-      ),
-      color = PCA_full$Watershed
+      marker = list(size = 3, opacity = 0.5),
+      color = ~Watershed,
+      source = "A"  # Assign source ID
     ) %>%
       layout(
         title = "3D PCA Plot",
@@ -242,10 +262,14 @@ server <- function(input, output, session) {
           zaxis = list(title = "PC3")
         )
       )
+    
+    event_register(p, "plotly_click")  # Register click event
+    return(p)
   })
   
   selectedFish <- reactiveVal(NULL)
   
+  # Select Fish ID from 2D PCA Click
   observeEvent(input$pcaClick, {
     nearPoint <- nearPoints(PCA_full, input$pcaClick, threshold = 5, maxpoints = 1)
     if (nrow(nearPoint) > 0) {
@@ -253,6 +277,16 @@ server <- function(input, output, session) {
     }
   })
   
+  # Select Fish ID from 3D PCA Click
+  observeEvent(event_data("plotly_click", source = "A"), {
+    clickData <- event_data("plotly_click", source = "A")
+    if (!is.null(clickData)) {
+      clickedIndex <- clickData$pointNumber + 1  # Convert from 0-based index
+      selectedFish(PCA_full$Fish_id[clickedIndex])
+    }
+  })
+  
+  # Time Series Plot (Updates when Fish ID is selected)
   output$isoPlot <- renderPlot({
     req(selectedFish(), Analysis_metadata, Analysis_ts_data)
     
@@ -266,9 +300,9 @@ server <- function(input, output, session) {
       mutate(MovingAvg = zoo::rollapply(Iso, width = 60, FUN = mean, fill = NA, align = "center"))
     
     ggplot(isoData, aes(x = Distance, y = Iso)) +
-      geom_point(alpha = 0.5) +
-      geom_line(aes(y = MovingAvg), color = "blue", size = 1) +
-      geom_hline(yintercept = 0.7092, color = "gold", size = 2) +
+      geom_point(alpha = 0.7, color = "grey30", size = 2) +
+      geom_line(aes(y = MovingAvg), color = "black", size = 2) +
+      geom_hline(yintercept = 0.7092, color = "dodgerblue4", size = 2, linetype = "dashed") +
       theme_grey() +
       labs(title = paste("Iso vs. Distance for Fish ID:", selectedFish()),
            x = "Distance",
@@ -285,8 +319,6 @@ server <- function(input, output, session) {
 }
 
 shinyApp(ui = ui, server = server)
-
-
 
 
 

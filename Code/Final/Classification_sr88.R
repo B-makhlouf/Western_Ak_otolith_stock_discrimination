@@ -14,7 +14,7 @@ source(here("/Users/benjaminmakhlouf/Research_repos/Western_Ak_otolith_stock_dis
 All_Metadata<- read.csv(here("Data/Final/Metadata_and_QC.csv"))
 
 
-processed_data<- read.csv(here("Data/Processed/Preprocessed_ts_matrices/Processed_Core_Sr88_ZNorm.csv"))
+processed_data<- read.csv(here("Data/Processed/Preprocessed_ts_matrices/Processed_Core_Fw_Sr88_ZNorm.csv"))
 
 
 
@@ -200,36 +200,228 @@ core_proportion <- idScores %>%
     y = "Proportion"
   )
 
+# 
+# # Filter idScores to be only "Actual" == Yukon 
+# yukon_idScores <- idScores %>%
+#   filter(Actual == "Yukon")
+# 
+# # Plot the proportion of correct vs incorrecy by "gen_Likely" 
+# 
+# gen_proportion <- yukon_idScores %>%
+#   group_by(likely_gen, Correct) %>%  # Group by likely_gen and Correct first
+#   summarise(Count = n(), .groups = "drop") %>%  # Count occurrences
+#   group_by(likely_gen) %>%  # Group again by likely_gen only
+#   mutate(Proportion = Count / sum(Count)) %>%  # Compute proportion within each likely_gen
+#   ggplot(aes(x = likely_gen, y = Proportion, fill = Correct)) +
+#   geom_bar(stat = "identity", position = "stack", alpha = 0.8) +  # Adjust transparency
+#   scale_fill_manual(values = c("firebrick", "seagreen")) +
+#   theme_grey() +
+#   labs(
+#     title = "Genetic Groups",
+#     x = "Gen_Likely",
+#     y = "Proportion"
+#   )
+# 
+# # Arrange the plots in one big figure using patchwork
+# final_plot <- (Heatmap + confidence_scores) / 
+#   (year_proportion + qc_proportion) / 
+#   (core_proportion + gen_proportion)
+# 
+# ggsave("figures/RF_Dashboard.pdf", plot = final_plot, width = 30, height = 30, units = "cm")
 
-# Filter idScores to be only "Actual" == Yukon 
-yukon_idScores <- idScores %>%
-  filter(Actual == "Yukon")
 
-# Plot the proportion of correct vs incorrecy by "gen_Likely" 
+############################### 
+########## Shiny App 
+##############################
+library(shiny)
+library(ggplot2)
+library(dplyr)
+library(here)
+library(plotly)
+library(zoo)
 
-gen_proportion <- yukon_idScores %>%
-  group_by(likely_gen, Correct) %>%  # Group by likely_gen and Correct first
-  summarise(Count = n(), .groups = "drop") %>%  # Count occurrences
-  group_by(likely_gen) %>%  # Group again by likely_gen only
-  mutate(Proportion = Count / sum(Count)) %>%  # Compute proportion within each likely_gen
-  ggplot(aes(x = likely_gen, y = Proportion, fill = Correct)) +
-  geom_bar(stat = "identity", position = "stack", alpha = 0.8) +  # Adjust transparency
-  scale_fill_manual(values = c("firebrick", "seagreen")) +
-  theme_grey() +
-  labs(
-    title = "Genetic Groups",
-    x = "Gen_Likely",
-    y = "Proportion"
+dataset_description <- reactive({
+  paste("Data:", data_type, "| Landmarks:", paste(landmark_filter, collapse = ", "))
+})
+
+watershed_counts <- reactive({
+  PCA_full %>%
+    count(Watershed) %>%
+    arrange(desc(n))
+})
+
+# UI
+ui <- fluidPage(
+  titlePanel("Timeseries Classification of AYK Otolith Isotopes"),
+  
+  sidebarPanel(
+    width = 3,  
+    
+    
+    # Display dataset info in bold
+    strong(textOutput("datasetInfo")),  
+    hr(),
+    helpText("Click on a point in the PCA plot to view Iso vs. Distance for that Fish ID."),
+    selectInput("xComp", "X Component:", choices = names(PCA_full), selected = "PC1"),
+    selectInput("yComp", "Y Component:", choices = names(PCA_full), selected = "PC2"),
+    
+    actionButton("resetZoom", "Reset Zoom"),
+    hr(),
+    
+    # Feature Loadings Plot inside Sidebar
+    plotOutput("featurePlot", height = "300px")
+  ),
+  
+  mainPanel(
+    width = 9,  
+    tabsetPanel(
+      id = "tabs",  
+      tabPanel("2D PCA", 
+               plotOutput("pcaPlot", click = "pcaClick", height = "800px",
+                          brush = brushOpts(id = "pcaBrush", resetOnNew = TRUE))
+      ),
+      tabPanel("3D PCA", 
+               plotlyOutput("pcaPlot3D", height = "800px")  
+      ),
+      tabPanel("Classification Diagnostics",
+               verbatimTextOutput("confMatrixText"),
+               fluidRow(
+                 column(4, plotOutput("yearPlot")),
+                 column(4, plotOutput("qcPlot")),
+                 column(4, plotOutput("corePlot"))
+               )
+      )
+    ),
+    conditionalPanel(
+      condition = "input.tabs == '2D PCA' || input.tabs == '3D PCA'",
+      plotOutput("isoPlot")
+    )
   )
-
-# Arrange the plots in one big figure using patchwork
-final_plot <- (Heatmap + confidence_scores) / 
-  (year_proportion + qc_proportion) / 
-  (core_proportion + gen_proportion)
-
-ggsave("figures/RF_Dashboard.pdf", plot = final_plot, width = 30, height = 30, units = "cm")
+)
 
 
+# Server
+server <- function(input, output, session) {
+  
+  output$datasetInfo <- renderText({
+    description <- dataset_description()
+    counts <- watershed_counts()
+    
+    count_text <- paste(counts$Watershed, counts$n, sep = ": ", collapse = " | ")
+    paste0(description, "\n\nSamples:\n", count_text)
+    
+  })
+  
+  zoomRegion <- reactiveValues(x = NULL, y = NULL)
+  
+  observeEvent(input$resetZoom, {
+    zoomRegion$x <- NULL
+    zoomRegion$y <- NULL
+  })
+  
+  observeEvent(input$pcaBrush, {
+    brush <- input$pcaBrush
+    if (!is.null(brush)) {
+      zoomRegion$x <- c(brush$xmin, brush$xmax)
+      zoomRegion$y <- c(brush$ymin, brush$ymax)
+    }
+  })
+  
+  output$pcaPlot <- renderPlot({
+    req(PCA_full)
+    
+    ggplot(PCA_full, aes_string(x = input$xComp, y = input$yComp, color = "Watershed")) +
+      geom_point(size = 3, alpha = 0.6) +
+      theme_classic() +
+      labs(title = "PCA of Iso Values by Watershed",
+           x = input$xComp,
+           y = input$yComp) +
+      theme(legend.title = element_blank()) +
+      scale_color_manual(values = c("Yukon" = "dodgerblue",
+                                    "Nush" = "darkorange",
+                                    "Kusko" = "#74AC64")) +  # Custom colors
+      coord_cartesian(xlim = zoomRegion$x, ylim = zoomRegion$y)
+  })
+  
+  output$confMatrixText <- renderPrint({
+    req(conf_matrix)
+    print(conf_matrix)
+  })
+  
+  output$pcaPlot3D <- renderPlotly({
+    p <- plot_ly(
+      data = PCA_full,
+      x = ~PC1, y = ~PC2, z = ~PC3,
+      type = "scatter3d",
+      mode = "markers",
+      marker = list(size = 3, opacity = 0.5),
+      color = ~Watershed,
+      source = "A"  # Assign source ID
+    ) %>%
+      layout(
+        title = "3D PCA Plot",
+        scene = list(
+          xaxis = list(title = "PC1"),
+          yaxis = list(title = "PC2"),
+          zaxis = list(title = "PC3")
+        )
+      )
+    
+    event_register(p, "plotly_click")  # Register click event
+    return(p)
+  })
+  
+  selectedFish <- reactiveVal(NULL)
+  
+  # Select Fish ID from 2D PCA Click
+  observeEvent(input$pcaClick, {
+    nearPoint <- nearPoints(PCA_full, input$pcaClick, threshold = 5, maxpoints = 1)
+    if (nrow(nearPoint) > 0) {
+      selectedFish(nearPoint$Fish_id[1])
+    }
+  })
+  
+  # Select Fish ID from 3D PCA Click
+  observeEvent(event_data("plotly_click", source = "A"), {
+    clickData <- event_data("plotly_click", source = "A")
+    if (!is.null(clickData)) {
+      clickedIndex <- clickData$pointNumber + 1  # Convert from 0-based index
+      selectedFish(PCA_full$Fish_id[clickedIndex])
+    }
+  })
+  
+  # Time Series Plot (Updates when Fish ID is selected)
+  output$isoPlot <- renderPlot({
+    req(selectedFish(), Analysis_metadata, Analysis_ts_data)
+    
+    fishIndex <- which(Analysis_metadata$Fish_id == selectedFish())
+    if (length(fishIndex) == 0) return(NULL)
+    
+    isoData <- tibble(
+      Distance = seq_along(Analysis_ts_data[fishIndex, ]),
+      Iso = as.numeric(Analysis_ts_data[fishIndex, ])
+    ) %>%
+      mutate(MovingAvg = zoo::rollapply(Iso, width = 60, FUN = mean, fill = NA, align = "center"))
+    
+    ggplot(isoData, aes(x = Distance, y = Iso)) +
+      geom_point(alpha = 0.7, color = "grey30", size = 2) +
+      geom_line(aes(y = MovingAvg), color = "black", size = 2) +
+      geom_hline(yintercept = 0.7092, color = "dodgerblue4", size = 2, linetype = "dashed") +
+      theme_grey() +
+      labs(title = paste("Iso vs. Distance for Fish ID:", selectedFish()),
+           x = "Distance",
+           y = "Iso")
+  })
+  
+  output$featurePlot <- renderPlot({
+    print(feature_figure)  
+  })
+  
+  output$yearPlot <- renderPlot({ year_proportion })
+  output$qcPlot <- renderPlot({ qc_proportion })
+  output$corePlot <- renderPlot({ core_proportion })
+}
 
+shinyApp(ui = ui, server = server)
 
 
