@@ -6,11 +6,10 @@ library(here)
 library(caret)
 library(shiny)
 
-
-
 ######################
 
 source(here("/Users/benjaminmakhlouf/Research_repos/Western_Ak_otolith_stock_discrimination/Code/Helper Code/PCA_functions.R"))### This script contains helper functions to run PCA and a few important figures
+source(here("/Users/benjaminmakhlouf/Research_repos/Western_Ak_otolith_stock_discrimination/Code/Helper Code/Raw_Data_Preprocessing.R"))
 All_Metadata<- read.csv(here("Data/Final/Metadata_and_QC.csv"))
 
 ########### Read in the most recent processed data 
@@ -31,7 +30,7 @@ AnalysisDataAll <- processed_data %>%
 #### SELECT WHICH DATA TO RUN 
 #############################
 Analysis_metadata<- AnalysisDataAll[,1:17] #Seperate Metadata 
-Analysis_ts_data<- AnalysisDataAll[,18:length(Analysis_ts_data)] #Seperate Isotope ts data 
+Analysis_ts_data<- AnalysisDataAll[,18:length(AnalysisDataAll)] #Seperate Isotope ts data 
 
 
 
@@ -59,18 +58,18 @@ ggsave(here("Figures/PCA_dashboard.pdf"), plot = combined_plot, width = 30, heig
 
 # ####
 #3D plot
-plot_ly(
-  x = PCA_full$PC1,
-  y = PCA_full$PC2,
-  z = PCA_full$PC3,
-  type = "scatter3d",
-  mode = "markers",
-  marker = list(
-    size = 2,  # Adjust size
-    opacity = 0.7  # Adjust transparency (0 = fully transparent, 1 = fully opaque)
-  ),
-  color = PCA_full$Watershed
-)
+# plot_ly(
+#   x = PCA_full$PC1,
+#   y = PCA_full$PC2,
+#   z = PCA_full$PC3,
+#   type = "scatter3d",
+#   mode = "markers",
+#   marker = list(
+#     size = 2,  # Adjust size
+#     opacity = 0.7  # Adjust transparency (0 = fully transparent, 1 = fully opaque)
+#   ),
+#   color = PCA_full$Watershed
+# )
 }
 
 ###############################
@@ -121,23 +120,189 @@ conf_matrix <- confusionMatrix(idScores$Predicted, idScores$Actual)
 # View results
 print(conf_matrix)
 
-
-
-
-
-
-
 # Convert the confusion matrix to a tidy format
 conf_matrix_df <- as.data.frame(conf_matrix$table)
 
+# Add metadata to idScored by Fish_ID 
+idScores <- left_join(idScores, All_Metadata, by = c("Fish_id" = "Fish_ID"))
 
-# Plot the heatmap
-Heatmap<-ggplot(conf_matrix_df, aes(x = Prediction, y = Reference, fill = Freq)) +
-  geom_tile() +
-  geom_text(aes(label = Freq), color = "grey20", size = 6) +
-  scale_fill_gradient(low = "white", high = "steelblue") +
-  theme_minimal() +
-  labs(title = "Confusion Matrix Heatmap", x = "Predicted Label", y = "Actual Label")
+############################### 
+########## Shiny App 
+##############################
+library(shiny)
+library(ggplot2)
+library(dplyr)
+library(here)
+library(plotly)
+library(zoo)
+
+dataset_description <- reactive({
+  paste("Data Type:", data_type, "| Landmarks:", paste(landmark_filter, collapse = ", "))
+})
+
+# UI
+ui <- fluidPage(
+  titlePanel("PCA Analysis Viewer"),
+  
+  sidebarLayout(
+    sidebarPanel(
+      width = 3,  # Reduce sidebar width to maximize plot area
+      helpText("Click on a point in the PCA plot to view Iso vs. Distance for that Fish ID."),
+      selectInput("xComp", "X Component:", choices = names(PCA_full), selected = "PC1"),
+      selectInput("yComp", "Y Component:", choices = names(PCA_full), selected = "PC2"),
+      actionButton("resetZoom", "Reset Zoom"),
+      hr(),
+      textOutput("datasetInfo")  # Display dataset information
+    ),
+    mainPanel(
+      width = 9,  # Increase main panel width for larger plots
+      tabsetPanel(
+        id = "tabs",  # Assign an ID to tabsetPanel for conditional logic
+        tabPanel("2D PCA", 
+                 plotOutput("pcaPlot", click = "pcaClick", 
+                            brush = brushOpts(id = "pcaBrush", resetOnNew = TRUE))
+        ),
+        tabPanel("3D PCA", 
+                 plotlyOutput("pcaPlot3D",  height = "800px")  # Interactive 3D PCA plot
+        ),
+        tabPanel("Feature Loadings", 
+                 plotOutput("featurePlot")
+        ),
+        tabPanel("Classification Diagnostics",
+                 verbatimTextOutput("confMatrixText"),                 
+                 plotOutput("yearPlot"),
+                 plotOutput("qcPlot"),
+                 plotOutput("corePlot")
+        )
+      ),
+      
+      conditionalPanel(
+        condition = "input.tabs == '2D PCA'",
+        plotOutput("isoPlot")
+      )
+    )
+  )
+)
+
+# Server
+server <- function(input, output, session) {
+  
+  output$datasetInfo <- renderText({
+    dataset_description()
+  })
+  
+  zoomRegion <- reactiveValues(x = NULL, y = NULL)
+  
+  observeEvent(input$resetZoom, {
+    zoomRegion$x <- NULL
+    zoomRegion$y <- NULL
+  })
+  
+  observeEvent(input$pcaBrush, {
+    brush <- input$pcaBrush
+    if (!is.null(brush)) {
+      zoomRegion$x <- c(brush$xmin, brush$xmax)
+      zoomRegion$y <- c(brush$ymin, brush$ymax)
+    }
+  })
+  
+  output$pcaPlot <- renderPlot({
+    req(PCA_full)
+    ggplot(PCA_full, aes_string(x = input$xComp, y = input$yComp, color = "Watershed")) +
+      geom_point(size = 2, alpha = 0.4) +
+      theme_classic() +
+      labs(title = "PCA of Iso Values by Watershed",
+           x = input$xComp,
+           y = input$yComp) +
+      theme(legend.title = element_blank()) +
+      coord_cartesian(xlim = zoomRegion$x, ylim = zoomRegion$y)
+  })
+  output$confMatrixText <- renderPrint({
+    req(conf_matrix)
+    print(conf_matrix)
+  })
+  output$pcaPlot3D <- renderPlotly({
+    plot_ly(
+      x = PCA_full$PC1,
+      y = PCA_full$PC2,
+      z = PCA_full$PC3,
+      type = "scatter3d",
+      mode = "markers",
+      marker = list(
+        size = 3,  
+        opacity = 0.5  
+      ),
+      color = PCA_full$Watershed
+    ) %>%
+      layout(
+        title = "3D PCA Plot",
+        scene = list(
+          xaxis = list(title = "PC1"),
+          yaxis = list(title = "PC2"),
+          zaxis = list(title = "PC3")
+        )
+      )
+  })
+  
+  selectedFish <- reactiveVal(NULL)
+  
+  observeEvent(input$pcaClick, {
+    nearPoint <- nearPoints(PCA_full, input$pcaClick, threshold = 5, maxpoints = 1)
+    if (nrow(nearPoint) > 0) {
+      selectedFish(nearPoint$Fish_id[1])
+    }
+  })
+  
+  output$isoPlot <- renderPlot({
+    req(selectedFish(), Analysis_metadata, Analysis_ts_data)
+    
+    fishIndex <- which(Analysis_metadata$Fish_id == selectedFish())
+    if (length(fishIndex) == 0) return(NULL)
+    
+    isoData <- tibble(
+      Distance = seq_along(Analysis_ts_data[fishIndex, ]),
+      Iso = as.numeric(Analysis_ts_data[fishIndex, ])
+    ) %>%
+      mutate(MovingAvg = zoo::rollapply(Iso, width = 60, FUN = mean, fill = NA, align = "center"))
+    
+    ggplot(isoData, aes(x = Distance, y = Iso)) +
+      geom_point(alpha = 0.5) +
+      geom_line(aes(y = MovingAvg), color = "blue", size = 1) +
+      geom_hline(yintercept = 0.7092, color = "gold", size = 2) +
+      theme_grey() +
+      labs(title = paste("Iso vs. Distance for Fish ID:", selectedFish()),
+           x = "Distance",
+           y = "Iso")
+  })
+  
+  output$featurePlot <- renderPlot({
+    print(feature_figure)  
+  })
+  
+  output$yearPlot <- renderPlot({ year_proportion })
+  output$qcPlot <- renderPlot({ qc_proportion })
+  output$corePlot <- renderPlot({ core_proportion })
+}
+
+shinyApp(ui = ui, server = server)
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 ## Confidence Scores 
 confidence_scores<-ggplot(idScores, aes(x = Confidence, fill = Correct)) +
@@ -145,11 +310,6 @@ confidence_scores<-ggplot(idScores, aes(x = Confidence, fill = Correct)) +
   scale_fill_manual(values = c("red", "green")) +
   theme_minimal() +
   labs(title = "Confidence Score Distribution", x = "Confidence Score", y = "Density")
-
-# Plot correct vs incorrect results by proportion of year 
-
-# Add metadata to idScored by Fish_ID 
-idScores <- left_join(idScores, All_Metadata, by = c("Fish_id" = "Fish_ID"))
 
 # Plot the proportion of year for incorrect vs correctly identified as a stacked bar plot 
 year_proportion <- idScores %>%

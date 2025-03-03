@@ -53,11 +53,11 @@ watershed <- watershed[-badOtos_indices]
 table(watershed)
 
 # Randomly choose 20 watershed indices from each watershed
-indices <- c(
-  sample(which(watershed == "Kuskokwim"), 80),
-  sample(which(watershed == "Nushagak"), 80),
-  sample(which(watershed == "Yukon"), 80)
-)
+# indices <- c(
+#   sample(which(watershed == "Kuskokwim"), 80),
+#   sample(which(watershed == "Nushagak"), 80),
+#   sample(which(watershed == "Yukon"), 80)
+# )
 
 ### IF I want to select all indices 
 indices <- c(
@@ -84,8 +84,138 @@ for (i in seq_along(filtered_outlines)) {
   coo[[i]] <- cbind(x, y)
 }
 
+
+num_points <- sapply(coo, nrow)
+
+# Compute the mean number of points per outline
+mean_num_points <- mean(num_points)
+
+# Print the result
+print(mean_num_points)
+
+
+n_points <- 6000  # Adjust as needed
+
+# Interpolate all outlines to have the same number of points
+coo_interpolated <- lapply(coo, Momocs::coo_interpolate, n = n_points)
+
+# Create the "Coo" object with interpolated outlines
+OtoOutlines <- Out(coo_interpolated, fac)
+
+OtoOutlines <- coo_center(OtoOutlines)
+
+# Compute distances from center to each point in each outline
+distances <- lapply(OtoOutlines$coo, Momocs::coo_centdist)
+
+library(ggplot2)
+library(dplyr)
+library(tidyr)
+
+# Convert distance data to a data frame
+dist_df <- do.call(rbind, lapply(seq_along(distances), function(i) {
+  data.frame(
+    picname = fac$picname[i],
+    watershed = fac$watershed[i],
+    point_id = seq_along(distances[[i]]),
+    distance = distances[[i]]
+  )
+}))
+
+# Compute mean and SD of radial distances by watershed
+summary_by_watershed <- dist_df %>%
+  group_by(watershed, point_id) %>%
+  summarize(
+    mean_distance = mean(distance, na.rm = TRUE),
+    sd_distance = sd(distance, na.rm = TRUE),
+    .groups = "drop"
+  )
+
+library(tidyverse)
+library(Momocs)
+
+# Convert outlines into a data frame with X, Y coordinates
+coo_df <- do.call(rbind, lapply(seq_along(OtoOutlines$coo), function(i) {
+  data.frame(
+    picname = fac$picname[i],
+    watershed = fac$watershed[i],
+    point_id = seq_along(OtoOutlines$coo[[i]][, 1]),
+    X = OtoOutlines$coo[[i]][, 1],
+    Y = OtoOutlines$coo[[i]][, 2]
+  )
+}))
+
+# Compute mean shape (X, Y) for each watershed
+mean_shape <- coo_df %>%
+  group_by(watershed, point_id) %>%
+  summarize(
+    mean_X = mean(X, na.rm = TRUE),
+    mean_Y = mean(Y, na.rm = TRUE),
+    .groups = "drop"
+  )
+
+# Compute distances from the center for each shape
+dist_df <- do.call(rbind, lapply(seq_along(OtoOutlines$coo), function(i) {
+  data.frame(
+    picname = fac$picname[i],
+    watershed = fac$watershed[i],
+    point_id = seq_along(OtoOutlines$coo[[i]][, 1]),
+    distance = sqrt(OtoOutlines$coo[[i]][, 1]^2 + OtoOutlines$coo[[i]][, 2]^2)
+  )
+}))
+
+# Compute mean and SD of distance for each point
+summary_by_watershed <- dist_df %>%
+  group_by(watershed, point_id) %>%
+  summarize(
+    mean_distance = mean(distance, na.rm = TRUE),
+    sd_distance = sd(distance, na.rm = TRUE),
+    .groups = "drop"
+  )
+
+# Merge mean shape and distance variability
+shape_summary <- mean_shape %>%
+  left_join(summary_by_watershed, by = c("watershed", "point_id"))
+
+# Compute unit vectors (direction) for each point
+shape_summary <- shape_summary %>%
+  mutate(
+    radius = sqrt(mean_X^2 + mean_Y^2),
+    unit_X = mean_X / radius,
+    unit_Y = mean_Y / radius
+  )
+
+# Compute upper and lower bounds by shifting along the radial direction
+shape_summary <- shape_summary %>%
+  mutate(
+    upper_X = mean_X + (sd_distance * unit_X),
+    upper_Y = mean_Y + (sd_distance * unit_Y),
+    lower_X = mean_X - (sd_distance * unit_X),
+    lower_Y = mean_Y - (sd_distance * unit_Y)
+  )
+
+# Plot mean shape and SD points
+ggplot(shape_summary, aes(x = mean_X, y = mean_Y, color = watershed, group = watershed)) +
+  geom_path(linewidth = .9) +  # Mean outline
+  geom_point(aes(x = upper_X, y = upper_Y), shape = 16, size = .1, alpha = 0.1) +  # Upper SD points
+  geom_point(aes(x = lower_X, y = lower_Y), shape = 16, size = .1, alpha = 0.1) +  # Lower SD points
+  coord_equal() +  # Maintain aspect ratio
+  facet_wrap(~ watershed, ncol = 1) +  # Facet by watershed
+  labs(title = "Mean Otolith Shape with Variability by Watershed", 
+       x = "X Coordinate", y = "Y Coordinate") +
+  theme_minimal()
+
+ggplot(shape_summary, aes(x = mean_X, y = mean_Y, color = watershed, group = watershed)) +
+  geom_path(linewidth = .9) +  # Mean outline
+  geom_point(aes(x = upper_X, y = upper_Y), shape = 16, size = 1, alpha = 1) +  # Upper SD points
+  geom_point(aes(x = lower_X, y = lower_Y), shape = 16, size = 1, alpha = 1) +  # Lower SD points
+  coord_equal() +  # Maintain aspect ratio
+  labs(title = "Mean Otolith Shape with Variability by Watershed", 
+       x = "X Coordinate", y = "Y Coordinate") +
+  theme_minimal()
+
+
 # Create the "Coo" object
-OtoOutlines <- Out(coo, fac)
+#OtoOutlines <- Out(coo, fac)
 
 ################################################################################
 ################################################################################
@@ -134,7 +264,9 @@ plot(Oto.p.2, ~watershed)
 #Oto.al<-fgProcrustes(OtoOutlines) ### Doesnt work because all of the outlines dont have the same size 
 
 
-panel(OtoOutlines, fac = "watershed", names = FALSE)
+panel(OtoOutlines, fac = "watershed", names = FALSE)  # ✅ Correct
+#panel(Oto.al, fac = "watershed", names = FALSE)
+
 scree_plot(Oto.p) #Scree plot, contribution of PC?
 #boxplot(Oto.p, 1) # UNCLEAR, boxplot?
 
@@ -175,97 +307,5 @@ Kus<- Oto.ms$shp$Kuskokwim %>% coo_draw(border = "darkgreen")
 #leaves <- shapes %>% slice(grep("leaf", names(shapes))) %$% coo
 
 OtoOutlines %>% efourier(6) %>% MSHAPES(~watershed) %>% plot_MSHAPES()
-
-
-################ Attempt at adding standard deviation to the mean shapes 
-
-install.packages("shapes")
-library(shapes)
-
-# Load necessary libraries
-library(tidyverse)
-library(shapeR)
-library(Momocs)
-library(shapes)
-
-# Convert OtoOutlines to a format compatible with the shapes package
-shapes_data <- lapply(OtoOutlines$coo, function(x) as.matrix(x))
-shapes_array <- array(unlist(shapes_data), dim = c(nrow(shapes_data[[1]]), 2, length(shapes_data)))
-
-# Extract watershed information
-watershed <- OtoOutlines$fac$watershed
-
-# Group shapes by watershed
-unique_watersheds <- unique(watershed)
-grouped_shapes <- lapply(unique_watersheds, function(w) {
-  shapes_array[,,watershed == w]
-})
-
-# Calculate mean shapes for each watershed
-mean_shapes <- lapply(grouped_shapes, function(shapes) {
-  apply(shapes, c(1, 2), mean)
-})
-
-# Calculate standard deviation for each watershed
-std_dev_shapes <- lapply(1:length(unique_watersheds), function(i) {
-  shapes <- grouped_shapes[[i]]
-  mean_shape <- mean_shapes[[i]]
-  deviations <- apply(shapes, 3, function(shape) {
-    shape - mean_shape
-  })
-  sqrt(apply(deviations^2, c(1, 2), mean))
-})
-
-# Visualize mean shapes with standard deviation
-par(mfrow = c(1, length(unique_watersheds)))  # Arrange plots in a row
-for (i in 1:length(unique_watersheds)) {
-  # Plot mean shape
-  plot(mean_shapes[[i]], type = "l", col = "blue", lwd = 2, main = unique_watersheds[i],
-       xlab = "X", ylab = "Y", xlim = range(shapes_array[,1,]), ylim = range(shapes_array[,2,]))
-  
-  # Add standard deviation as a shaded region
-  polygon(
-    x = c(mean_shapes[[i]][,1] + std_dev_shapes[[i]][,1], rev(mean_shapes[[i]][,1] - std_dev_shapes[[i]][,1])),
-    y = c(mean_shapes[[i]][,2] + std_dev_shapes[[i]][,2], rev(mean_shapes[[i]][,2] - std_dev_shapes[[i]][,2])),
-    col = rgb(0, 0, 1, 0.2), border = NA
-  )
-}
-
-
-# 
-# 
-# # Add landmarks
-# OtoOutlinesldk <- def_ldk(OtoOutlines, 2)
-# OtoOutlinesldk <- add_ldk(OtoOutlinesldk,1)
-# 
-# # Align outlines using Procrustes analysis
-# OtoOutlines_aligned <- fgProcrustes(OtoOutlinesldk)
-# 
-# # Visualize aligned outlines
-# stack(OtoOutlines_aligned)
-# 
-# # Slide outlines to a common starting point
-# OtoOutlines_aligned <- coo_slide(OtoOutlines_aligned, ldk = 1)
-# 
-# # Perform elliptical Fourier transformation
-# OtoOutlines_aligned <- efourier(OtoOutlines, 10, norm = FALSE)
-# 
-# # Perform Principal Component Analysis
-# OtoOutlines_pca <- PCA(OtoOutlines_aligned)
-# 
-# # Plot PCA results
-# plot_PCA(OtoOutlines_pca)
-# plot_PCA(OtoOutlines_pca, ~watershed)
-# 
-# # Perform Linear Discriminant Analysis
-# OtoOutlines_lda <- LDA(OtoOutlines_pca, ~watershed)
-# 
-# # Plot LDA results
-# plot_CV(OtoOutlines_lda)
-# 
-# #Harmonics contribution 
-# hcontrib(OtoOutlines_aligned)
-# 
-# panel(OtoOutlines, fac = "watershed", names = FALSE)
 
 
