@@ -1,5 +1,12 @@
 
-
+library(tidyverse)
+library(here)
+# Load required packages
+library(data.table)  # For fread
+library(dplyr)       # For data manipulation
+library(tibble)      # For creating tibbles
+library(magrittr)    # For the pipe operator
+library(stats) 
 
 
 
@@ -40,7 +47,7 @@ process_Sr88 <- function(interp_points = 1000, landmark_filter = c("Fw")) {
     
     # if the difference is less than 200, skip 
     
-    if (fw_end_diff < 150) {
+    if (fw_end_diff < 100) {
       next
     }
     
@@ -53,7 +60,7 @@ process_Sr88 <- function(interp_points = 1000, landmark_filter = c("Fw")) {
   
     # Collect all reads within the specified landmarks and the next 300 microns after "Fw"
     ind_data_extended <- ind_data %>% 
-      filter(Landmark %in% landmark_filter | (Microns > fw_max_microns & Microns <= fw_max_microns + 150))
+      filter(Landmark %in% landmark_filter | (Microns > fw_max_microns & Microns <= fw_max_microns + 100))
     
     
     # Find the index of the last FW landmark
@@ -113,6 +120,7 @@ process_Sr88 <- function(interp_points = 1000, landmark_filter = c("Fw")) {
   
   return(list(znorm_array = znorm_array, ids = ids, watersheds = watersheds, natal_origins = natal_origins, Year = years))
 }
+
 # test params
 interp_points = 1000
 landmark_filter = c("Fw")

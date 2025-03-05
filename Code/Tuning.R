@@ -22,5 +22,9 @@ segment_logistic %>%
   cal_plot_breaks(Class, .pred_good, num_breaks = 5) #This will create 5 bins
 
 
-#### Windowed approach (still tidyverse)
+#### Windowed approach (still tidyverse). This can be an approach to use if there are not enough data points per bin.
+# Default step size is .05 and window size is .1 
+
+segment_logistic %>%
+  cal_plot_windowed(Class, .pred_good) 
 

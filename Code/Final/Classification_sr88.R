@@ -17,7 +17,6 @@ All_Metadata<- read.csv(here("Data/Final/Metadata_and_QC.csv"))
 processed_data<- read.csv(here("Data/Processed/Preprocessed_ts_matrices/Processed_Fw_Sr88.csv"))
 
 
-
 ########### Read in the most recent processed data 
 ################################################################################
 
@@ -27,11 +26,18 @@ AnalysisDataAll <- processed_data %>%
   left_join(All_Metadata %>% select(-Year), by = c("Fish_id" = "Fish_ID")) %>%
   select((ncol(.)-12):ncol(.), everything()) 
 
+# What are the Watershed numbers in the data 
+AnalysisDataAll %>% group_by(Watershed) %>% summarise(n = n())
+
+
 #############################
 #### SELECT WHICH DATA TO RUN 
 #############################
 Analysis_metadata<- AnalysisDataAll[,1:17] #Seperate Metadata 
 Analysis_ts_data<- AnalysisDataAll[,18:length(AnalysisDataAll)] #Seperate Isotope ts data 
+
+# Give an understanding of how many from each watershed are in the data
+Analysis_metadata %>% group_by(Watershed) %>% summarise(n = n())
 
 
 
