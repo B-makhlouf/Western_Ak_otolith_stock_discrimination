@@ -268,10 +268,14 @@ grid.arrange(
 grid.text("All harmonics", x = 0.25, y = 0.98, gp = gpar(fontsize = 12, fontface = "bold"))
 grid.text("Harmonic 1 removed", x = 0.75, y = 0.98, gp = gpar(fontsize = 12, fontface = "bold"))
 
-
 # Create a scree plot to visualize the contribution of each PC
 scree_plot(Oto.pca)
 scree_plot(Oto.pca.hm1rm)
+
+# visualize the principal component contribution 
+PCcontrib(Oto.pca,1:4) #Visual contribution of PC
+PCcontrib(Oto.pca.hm1rm,1:4) #Visual contribution of PC
+
 
 #############################################################################################
 #################### Classification 
@@ -359,67 +363,23 @@ cat("KNN Accuracy: ", knn_confusion_matrix$overall['Accuracy'], "\n")
 
 
 
+#############################################################################################
+
+## Procrustes alignment
+Oto.aligned<-fgProcrustes(OtoOutlines) ### Doesnt work because all of the outlines dont have the same size 
+panel(OtoOutlines, fac = "watershed", names = FALSE)  # Not aligned, raw outlines
+panel(Oto.aligned, fac = "watershed", names = FALSE)  # Aligned
 
 
-
-
-
-
-
-
-
-
-
-
-## try to align 
-#Oto.al<-fgProcrustes(OtoOutlines) ### Doesnt work because all of the outlines dont have the same size 
-
-?fgProcrustes
-
-panel(OtoOutlines, fac = "watershed", names = FALSE)  # ✅ Correct
-#panel(Oto.al, fac = "watershed", names = FALSE)
-
-scree_plot(Oto.p) #Scree plot, contribution of PC?
-#boxplot(Oto.p, 1) # UNCLEAR, boxplot?
-
-PCcontrib(Oto.p,1:8) #Visual contribution of PC
-
-
-##### Linear Discrimination Analysis. 
-oto.l<- LDA(Oto.f, ~watershed) #Linear Discrimination Analysis
-oto.l
-oto.lda %>% summary
-plot_CV(oto.lda) #Confusion matrix
-# print confusion matrix 
-
-
-
-MANOVA(Oto.p, ~watershed) #MANOVA 
-## Very significant difference in PCA between Watersheds
-MANOVA_PW(Oto.p, ~watershed) #MANOVA pairwise
-### No dif between Yukon and Kusko, but significant difference otherwise
-
-
+#############################################################################################
+# Misc. 
 
 ### Heirarchial clustering 
-CLUST(Oto.p, ~watershed) #Heirarchial clustering
+CLUST(Oto.fourier, labels = ~watershed) #Heirarchial clustering
 
 ## K means clustering 
-KMEANS(Oto.p, centers = 10)
+KMEANS(Oto.pca, centers = 5)
 
-### Mean Shapes, individually 
-Oto.f %>% MSHAPES %>% coo_plot() # MEan shape for all 
-Oto.ms<- MSHAPES(Oto.f, ~watershed) #Mean shape for each watershed
-Out(Oto.ms$shp) %>% panel(names = TRUE) # Mean shapes by watershed
 
-### Put all three on one plot (hypothetically)
-Nush<- Oto.ms$shp$Nushagak %>% coo_plot(border = "red")
-Yuk<- Oto.ms$shp$Yukon %>% coo_draw(border = "dodgerblue2")
-Kus<- Oto.ms$shp$Kuskokwim %>% coo_draw(border = "darkgreen")
-
-# Direct comparison of them #Example 
-#leaves <- shapes %>% slice(grep("leaf", names(shapes))) %$% coo
-
-OtoOutlines %>% efourier(6) %>% MSHAPES(~watershed) %>% plot_MSHAPES()
 
 
