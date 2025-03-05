@@ -19,9 +19,21 @@ library(shapeR)
 library(Momocs)
 library(ggbiplot)
 library(plotly)
+library(grDevices)
+library(gridExtra)
+library(grid)
+library(caret)
+library(e1071)   # for SVM
+library(randomForest) # for RF
+
+
+
 
 # remove everythng but shape and outlines only 
 rm (list = ls()[!ls() %in% c("shape", "outlinesonly")])
+
+
+######## Extract Outlines ##################################################################################################
 
 # Use ShapeR to extract outlines
 shape <- shapeR("/Users/benjaminmakhlouf/Research_repos/Western_Ak_otolith_stock_discrimination/ShapeAnalysis", "FISH.csv")
@@ -39,10 +51,8 @@ all_outlines <- c(kk_outlines, nk_outlines, yk_outlines)
 picnames <- outlinesonly@master.list.org$picname
 watershed <- outlinesonly@master.list.org$Watershed
 
-# bad outlines, from the diagnostic "outline" images  
+# MANUALLY add and remove bad otolith samples   
 badOtos<- c("2022_kk_302", "2022_kk_307", "2022_kk_309", "2022_kk_310", "2022_kk_313", "2022_kk_315","2022_kk_322","2022_kk_329","2022_kk_363","2023_kk_108","2023_kk_128","2023_kk_133","2023_kk_134","2023_kk_141","2015_nk_002","2015_nk_005","2015_nk_006","2015_nk_021","2015_nk_035","2015_nk_047","2015_nk_093","2015_nk_100","2017_nk_146","2019_nk_163","2020_yk_132","2020_yk_182","2023_yk_037","2023_yk_061")
-
-# Find the indices of picnames which match badOtos
 badOtos_indices <- which(picnames %in% badOtos)
 
 # Remove bad outlines, picnames, and watershed
@@ -50,7 +60,7 @@ filtered_outlines <- all_outlines[-badOtos_indices]
 picnames <- picnames[-badOtos_indices]
 watershed <- watershed[-badOtos_indices]
 
-table(watershed)
+table(watershed) ## HOW Many we got ?? 
 
 # Randomly choose 20 watershed indices from each watershed
 # indices <- c(
@@ -76,7 +86,7 @@ watershed <- watershed[indices]
 coo <- list()
 fac <- data.frame(picname = picnames, watershed = watershed, stringsAsFactors = FALSE)
 
-# Process each outline
+# Process all the outlines into a format that can be added to the coo object 
 for (i in seq_along(filtered_outlines)) {
   shape <- filtered_outlines[[i]]
   x <- shape$X
@@ -89,180 +99,282 @@ num_points <- sapply(coo, nrow)
 
 # Compute the mean number of points per outline
 mean_num_points <- mean(num_points)
+print(mean_num_points) #5958.648
+n_points <- 200 #mean_num_points  # The mean is what everything should be interpolated to. This may be overkill 
 
-# Print the result
-print(mean_num_points)
-
-
-n_points <- 6000  # Adjust as needed
-
-# Interpolate all outlines to have the same number of points
+# Interpolate all outlines to have the same number of points using the MOMOCS functionality
 coo_interpolated <- lapply(coo, Momocs::coo_interpolate, n = n_points)
 
-# Create the "Coo" object with interpolated outlines
+# Create the "Coo" object with interpolated outlines. This is the data file needed for MOMOCS analysis 
 OtoOutlines <- Out(coo_interpolated, fac)
 
-OtoOutlines <- coo_center(OtoOutlines)
+################################################################################
+################ Figure showing the mean shape and the quartiles from that shape 
+################################################################################
 
-# Compute distances from center to each point in each outline
-distances <- lapply(OtoOutlines$coo, Momocs::coo_centdist)
-
-library(ggplot2)
-library(dplyr)
-library(tidyr)
-
-# Convert distance data to a data frame
-dist_df <- do.call(rbind, lapply(seq_along(distances), function(i) {
-  data.frame(
-    picname = fac$picname[i],
-    watershed = fac$watershed[i],
-    point_id = seq_along(distances[[i]]),
-    distance = distances[[i]]
-  )
-}))
-
-# Compute mean and SD of radial distances by watershed
-summary_by_watershed <- dist_df %>%
-  group_by(watershed, point_id) %>%
-  summarize(
-    mean_distance = mean(distance, na.rm = TRUE),
-    sd_distance = sd(distance, na.rm = TRUE),
-    .groups = "drop"
-  )
-
-library(tidyverse)
-library(Momocs)
-
-# Convert outlines into a data frame with X, Y coordinates
-coo_df <- do.call(rbind, lapply(seq_along(OtoOutlines$coo), function(i) {
-  data.frame(
-    picname = fac$picname[i],
-    watershed = fac$watershed[i],
-    point_id = seq_along(OtoOutlines$coo[[i]][, 1]),
-    X = OtoOutlines$coo[[i]][, 1],
-    Y = OtoOutlines$coo[[i]][, 2]
-  )
-}))
-
-# Compute mean shape (X, Y) for each watershed
-mean_shape <- coo_df %>%
-  group_by(watershed, point_id) %>%
-  summarize(
-    mean_X = mean(X, na.rm = TRUE),
-    mean_Y = mean(Y, na.rm = TRUE),
-    .groups = "drop"
-  )
-
-# Compute distances from the center for each shape
-dist_df <- do.call(rbind, lapply(seq_along(OtoOutlines$coo), function(i) {
-  data.frame(
-    picname = fac$picname[i],
-    watershed = fac$watershed[i],
-    point_id = seq_along(OtoOutlines$coo[[i]][, 1]),
-    distance = sqrt(OtoOutlines$coo[[i]][, 1]^2 + OtoOutlines$coo[[i]][, 2]^2)
-  )
-}))
-
-# Compute mean and SD of distance for each point
-summary_by_watershed <- dist_df %>%
-  group_by(watershed, point_id) %>%
-  summarize(
-    mean_distance = mean(distance, na.rm = TRUE),
-    sd_distance = sd(distance, na.rm = TRUE),
-    .groups = "drop"
-  )
-
-# Merge mean shape and distance variability
-shape_summary <- mean_shape %>%
-  left_join(summary_by_watershed, by = c("watershed", "point_id"))
-
-# Compute unit vectors (direction) for each point
-shape_summary <- shape_summary %>%
-  mutate(
-    radius = sqrt(mean_X^2 + mean_Y^2),
-    unit_X = mean_X / radius,
-    unit_Y = mean_Y / radius
-  )
-
-# Compute upper and lower bounds by shifting along the radial direction
-shape_summary <- shape_summary %>%
-  mutate(
-    upper_X = mean_X + (sd_distance * unit_X),
-    upper_Y = mean_Y + (sd_distance * unit_Y),
-    lower_X = mean_X - (sd_distance * unit_X),
-    lower_Y = mean_Y - (sd_distance * unit_Y)
-  )
-
-# Plot mean shape and SD points
-ggplot(shape_summary, aes(x = mean_X, y = mean_Y, color = watershed, group = watershed)) +
-  geom_path(linewidth = .9) +  # Mean outline
-  geom_point(aes(x = upper_X, y = upper_Y), shape = 16, size = .1, alpha = 0.1) +  # Upper SD points
-  geom_point(aes(x = lower_X, y = lower_Y), shape = 16, size = .1, alpha = 0.1) +  # Lower SD points
-  coord_equal() +  # Maintain aspect ratio
-  facet_wrap(~ watershed, ncol = 1) +  # Facet by watershed
-  labs(title = "Mean Otolith Shape with Variability by Watershed", 
-       x = "X Coordinate", y = "Y Coordinate") +
-  theme_minimal()
-
-ggplot(shape_summary, aes(x = mean_X, y = mean_Y, color = watershed, group = watershed)) +
-  geom_path(linewidth = .9) +  # Mean outline
-  geom_point(aes(x = upper_X, y = upper_Y), shape = 16, size = 1, alpha = 1) +  # Upper SD points
-  geom_point(aes(x = lower_X, y = lower_Y), shape = 16, size = 1, alpha = 1) +  # Lower SD points
-  coord_equal() +  # Maintain aspect ratio
-  labs(title = "Mean Otolith Shape with Variability by Watershed", 
-       x = "X Coordinate", y = "Y Coordinate") +
-  theme_minimal()
-
-
-# Create the "Coo" object
-#OtoOutlines <- Out(coo, fac)
+if (T){
+  
+    # Center outlines
+    OtoOutlines <- coo_center(OtoOutlines)
+    
+    # Compute distances from center for each outline
+    distances <- lapply(OtoOutlines$coo, Momocs::coo_centdist)
+    
+    # Convert to dataframe
+    dist_df <- do.call(rbind, lapply(seq_along(distances), function(i) {
+      data.frame(
+        picname = fac$picname[i],
+        watershed = fac$watershed[i],
+        point_id = seq_along(distances[[i]]),
+        distance = distances[[i]]
+      )
+    }))
+    
+    # Compute median and quartiles for each point in each watershed
+    summary_by_watershed <- dist_df %>%
+      group_by(watershed, point_id) %>%
+      summarize(
+        Q1_distance = quantile(distance, 0.25, na.rm = TRUE),
+        median_distance = quantile(distance, 0.50, na.rm = TRUE),
+        Q3_distance = quantile(distance, 0.75, na.rm = TRUE),
+        .groups = "drop"
+      )
+    
+    # Convert outlines into a dataframe with X, Y coordinates
+    coo_df <- do.call(rbind, lapply(seq_along(OtoOutlines$coo), function(i) {
+      data.frame(
+        picname = fac$picname[i],
+        watershed = fac$watershed[i],
+        point_id = seq_along(OtoOutlines$coo[[i]][, 1]),
+        X = OtoOutlines$coo[[i]][, 1],
+        Y = OtoOutlines$coo[[i]][, 2]
+      )
+    }))
+    
+    # Merge distances with coordinates to get the full dataframe
+    dist_with_coords <- left_join(dist_df, coo_df, by = c("picname", "watershed", "point_id"))
+    
+    # Extract points that belong to each quartile
+    quartile_shapes <- dist_with_coords %>%
+      left_join(summary_by_watershed, by = c("watershed", "point_id")) %>%
+      filter(distance <= Q1_distance | distance >= Q3_distance) %>%
+      mutate(quartile = case_when(
+        distance <= Q1_distance ~ "Q1",
+        distance >= Q3_distance ~ "Q3"
+      ))
+    
+    # For each watershed, compute the convex hull for Q1 and Q3 points
+    hull_Q1 <- quartile_shapes %>%
+      filter(quartile == "Q1") %>%
+      group_by(watershed) %>%
+      do({
+        chull_points <- chull(.$X, .$Y)
+        data.frame(X = .$X[chull_points], Y = .$Y[chull_points])
+      })
+    
+    hull_Q3 <- quartile_shapes %>%
+      filter(quartile == "Q3") %>%
+      group_by(watershed) %>%
+      do({
+        chull_points <- chull(.$X, .$Y)
+        data.frame(X = .$X[chull_points], Y = .$Y[chull_points])
+      })
+    
+    # Calculate the mean shape per watershed
+    mean_shape_by_watershed <- coo_df %>%
+      group_by(watershed, point_id) %>%
+      summarize(
+        mean_X = mean(X, na.rm = TRUE),
+        mean_Y = mean(Y, na.rm = TRUE),
+        .groups = "drop"
+      )
+    
+    # Add a column to indicate quartiles for fill color
+    hull_Q1$quartile <- "Q1"
+    hull_Q3$quartile <- "Q3"
+    
+    # Plot with convex hulls for Q1 and Q3, median points, and mean shape per watershed
+    ggplot() +
+      # Shaded region for Q1 and Q3 with quartile legend
+      geom_polygon(data = hull_Q1, aes(x = X, y = Y, fill = quartile), alpha = 0.2) +
+      geom_polygon(data = hull_Q3, aes(x = X, y = Y, fill = quartile), alpha = 0.2) +
+      # Plot median points
+      geom_point(data = quartile_shapes %>% filter(distance == median_distance), 
+                 aes(x = X, y = Y), color = "black", size = 3) +
+      # Add mean shape per watershed as a line (use the mean X and Y coordinates for each watershed)
+      geom_path(data = mean_shape_by_watershed, aes(x = mean_X, y = mean_Y, group = watershed), 
+                color = "grey15", size = 1, linetype = "solid") +
+      facet_wrap(~ watershed, ncol = 1) +
+      coord_equal() +
+      labs(title = "Otolith Shape Variation with Mean Shape Overlay (Per Watershed)", 
+           x = "X Coordinate", y = "Y Coordinate") +
+      scale_fill_manual(values = c("Q1" = "blue", "Q3" = "red"), name = "Quartile") +  # Add custom fill colors and legend
+      theme_minimal()
+  }
+  
 
 ################################################################################
 ################################################################################
 ################################################################################
-# Analysis 
-
-# Visualize raw outlines
-stack(OtoOutlines)
-
-# Perform elliptical Fourier transformation on an individual 
-coo_oscillo(OtoOutlines[4],"efourier")
 
 ## Elliptical Fourier Analysis , with normalization being FALSE 
+## "Foo-ree-ay"
 ## nb.h is the # of harmonics
-Oto.f<- efourier(OtoOutlines, nb.h = 10, norm = TRUE)
+Oto.fourier<- efourier(OtoOutlines, nb.h = 10, norm = TRUE)
 
-
-boxplot(Oto.f) #boxplot of harmonics 
-Oto.p<- PCA(Oto.f) # run a PCA 
-plot(Oto.p, ~watershed) #Plot the PCA 
-
-## GGbiplot
-ggbiplot(Oto.p, obs.scale = .5, var.scale = .5, groups = Oto.f$watershed, ellipse = TRUE ,ellipse.linewidth = .3, ellipse.alpha = .1, circle = FALSE) 
-
-# 3d Plot 
-plot_ly(
-  x = Oto.p$x[,1], 
-  y = Oto.p$x[,2], 
-  z = Oto.p$x[,3], 
-  type = "scatter3d", 
-  mode = "markers", 
-  marker = list(size = 3),  # Adjust size here
-  color = Oto.f$watershed
-)
+########### 
+########### PCA and visualize 
+Oto.pca<- PCA(Oto.fourier) # run a PCA 
+watershed_colors <- c( "Kuskokwim" = "firebrick", "Nushagak" = "darkgreen", "Yukon" = "dodgerblue")
+plot(Oto.pca, ~watershed, col = watershed_colors) #Plot the PCA 
 
 # make watershed a factor 
-Oto.f$watershed <- as.factor(Oto.f$watershed)
+Oto.fourier$watershed <- as.factor(Oto.f$watershed)
 
 #### Try the PCA, without the first harmonic
-Oto.f.2 <- rm_harm(Oto.f, 1)
-Oto.p.2<- PCA(Oto.f.2)
-plot(Oto.p.2, ~watershed)
+Oto.fourier_hm1rm <- rm_harm(Oto.f, 1)
+Oto.pca.hm1rm<- PCA(Oto.fourier_hm1rm)
+
+plot(Oto.pca.hm1rm, ~watershed, col = watershed_colors)
+
+# Create the first PCA plot (with all harmonics)
+pca_plot1 <- ggbiplot(Oto.pca, 
+                      obs.scale = .5, 
+                      var.scale = .5, 
+                      groups = Oto.f$watershed, 
+                      ellipse = TRUE, 
+                      ellipse.linewidth = .3, 
+                      ellipse.alpha = .1, 
+                      circle = FALSE)
+
+# Create the second PCA plot (without the first harmonic)
+pca_plot2 <- ggbiplot(Oto.pca.hm1rm, 
+                      obs.scale = .5, 
+                      var.scale = .5, 
+                      groups = Oto.f$watershed, 
+                      ellipse = TRUE, 
+                      ellipse.linewidth = .3, 
+                      ellipse.alpha = .1, 
+                      circle = FALSE)
+
+# Display the two PCA plots side by side with labels
+grid.arrange(
+  pca_plot1, pca_plot2, 
+  ncol = 2, 
+  top = textGrob("PCA of Otolith Shapes", gp = gpar(fontsize = 15, fontface = "bold"))
+)
+
+# Add custom labels using grid.text
+grid.text("All harmonics", x = 0.25, y = 0.98, gp = gpar(fontsize = 12, fontface = "bold"))
+grid.text("Harmonic 1 removed", x = 0.75, y = 0.98, gp = gpar(fontsize = 12, fontface = "bold"))
+
+
+# Create a scree plot to visualize the contribution of each PC
+scree_plot(Oto.pca)
+scree_plot(Oto.pca.hm1rm)
+
+#############################################################################################
+#################### Classification 
+#############################################################################################
+
+# Prepare the data
+coeff_df <- as.data.frame(Oto.fourier$coe)
+coeff_df$watershed <- Oto.fourier$fac$watershed
+
+# Remove constant variables (if applicable)
+constant_vars <- c(1, 11, 21)  # Define constant variables to be removed
+coeff_df_filtered <- coeff_df[, -constant_vars]  # Remove the specified columns
+
+# Split the data into training and testing sets (80% training, 20% testing)
+set.seed(123)  # For reproducibility
+train_index <- createDataPartition(coeff_df_filtered$watershed, p = 0.8, list = FALSE)
+train_data <- coeff_df_filtered[train_index, ]
+test_data <- coeff_df_filtered[-train_index, ]
+
+# Set up 10-fold cross-validation for the training set
+train_control <- trainControl(method = "cv", number = 10)
+
+# --- 1. Fit and evaluate MLP (Multi-Layer Perceptron) ---
+mlp_model <- train(watershed ~ ., data = train_data, method = "mlp", trControl = train_control)
+
+# Print MLP model summary
+print(mlp_model)
+
+# Make predictions on the testing set
+mlp_predictions <- predict(mlp_model, newdata = test_data)
+# make both factors 
+mlp_predictions <- as.factor(mlp_predictions)
+test_data$watershed <- as.factor(test_data$watershed)
+# Confusion Matrix for MLP
+mlp_confusion_matrix <- confusionMatrix(as.factor(mlp_predictions), test_data$watershed)
+print(mlp_confusion_matrix)
+
+
+# --- 2. Fit and evaluate SVM (Support Vector Machine) ---
+svm_model <- train(watershed ~ ., data = train_data, method = "svmRadial", trControl = train_control)
+
+# Print SVM model summary
+print(svm_model)
+
+# Make predictions on the testing set
+svm_predictions <- predict(svm_model, newdata = test_data)
+
+# Confusion Matrix for SVM
+svm_confusion_matrix <- confusionMatrix(as.factor(svm_predictions), test_data$watershed)
+
+print(svm_confusion_matrix)
+
+# --- 3. Fit and evaluate Random Forest (RF) ---
+rf_model <- train(watershed ~ ., data = train_data, method = "rf", trControl = train_control)
+
+# Print Random Forest model summary
+print(rf_model)
+
+# Make predictions on the testing set
+rf_predictions <- predict(rf_model, newdata = test_data)
+
+# Confusion Matrix for Random Forest
+rf_confusion_matrix <- confusionMatrix(as.factor(rf_predictions), test_data$watershed)
+print(rf_confusion_matrix)
+
+# --- 4. Fit and evaluate KNN (K-Nearest Neighbors) ---
+knn_model <- train(watershed ~ ., data = train_data, method = "knn", trControl = train_control)
+
+# Print KNN model summary
+print(knn_model)
+
+# Make predictions on the testing set
+knn_predictions <- predict(knn_model, newdata = test_data)
+
+# Confusion Matrix for KNN
+knn_confusion_matrix <- confusionMatrix(as.factor(knn_predictions), test_data$watershed)
+print(knn_confusion_matrix)
+
+# Summary of all models' performance
+cat("\n--- Model Performance Summary ---\n")
+cat("MLP Accuracy: ", mlp_confusion_matrix$overall['Accuracy'], "\n")
+cat("SVM Accuracy: ", svm_confusion_matrix$overall['Accuracy'], "\n")
+cat("Random Forest Accuracy: ", rf_confusion_matrix$overall['Accuracy'], "\n")
+cat("KNN Accuracy: ", knn_confusion_matrix$overall['Accuracy'], "\n")
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 ## try to align 
 #Oto.al<-fgProcrustes(OtoOutlines) ### Doesnt work because all of the outlines dont have the same size 
 
+?fgProcrustes
 
 panel(OtoOutlines, fac = "watershed", names = FALSE)  # ✅ Correct
 #panel(Oto.al, fac = "watershed", names = FALSE)
@@ -276,8 +388,10 @@ PCcontrib(Oto.p,1:8) #Visual contribution of PC
 ##### Linear Discrimination Analysis. 
 oto.l<- LDA(Oto.f, ~watershed) #Linear Discrimination Analysis
 oto.l
-oto.l %>% summary
-plot_CV(oto.l) #Confusion matrix
+oto.lda %>% summary
+plot_CV(oto.lda) #Confusion matrix
+# print confusion matrix 
+
 
 
 MANOVA(Oto.p, ~watershed) #MANOVA 

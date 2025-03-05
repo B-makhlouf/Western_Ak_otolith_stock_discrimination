@@ -6,15 +6,15 @@ library(here)
 library(caret)
 library(shiny)
 
-
+# CLEAR THE ENVIRONMENT 
+rm(list = ls())
 
 ######################
 
 source(here("/Users/benjaminmakhlouf/Research_repos/Western_Ak_otolith_stock_discrimination/Code/Helper Code/PCA_functions.R"))### This script contains helper functions to run PCA and a few important figures
 All_Metadata<- read.csv(here("Data/Final/Metadata_and_QC.csv"))
 
-
-processed_data<- read.csv(here("Data/Processed/Preprocessed_ts_matrices/Processed_Core_Fw_Sr88_ZNorm.csv"))
+processed_data<- read.csv(here("Data/Processed/Preprocessed_ts_matrices/Processed_Fw_Sr88.csv"))
 
 
 
@@ -66,7 +66,7 @@ if (T){
     type = "scatter3d",
     mode = "markers",
     marker = list(
-      size = 2,  # Adjust size
+      size = 4,  # Adjust size
       opacity = 0.7  # Adjust transparency (0 = fully transparent, 1 = fully opaque)
     ),
     color = PCA_full$Watershed
@@ -84,7 +84,7 @@ ModelData <- Analysis_ts_data %>% as.data.frame() %>% mutate(Watershed = Analysi
 
 # Split data into training (80%) and testing (20%)
 set.seed(123)
-trainIndex <- createDataPartition(ModelData$Watershed, p = 0.8, list = FALSE)
+trainIndex <- createDataPartition(ModelData$Watershed, p = 0.7, list = FALSE)
 traindata <- ModelData[trainIndex, ]
 testdata <- ModelData[-trainIndex, ]
 
@@ -95,6 +95,14 @@ control <- trainControl(method = "cv", number = 5, classProbs = TRUE)
 set.seed(123)
 
 model <- train(Watershed ~ ., data = traindata, method = "rf", trControl = control)
+
+# Calculate class weights
+class_weights <- table(traindata$Watershed)
+class_weights <- 1 / class_weights
+weights <- class_weights[as.factor(traindata$Watershed)]
+
+# Train Random Forest model with weights
+model <- train(Watershed ~ ., data = traindata, method = "rf", trControl = control, weights = weights)
 
 # Make predictions (both class labels and probabilities)
 predictions <- predict(model, testdata)
@@ -120,11 +128,6 @@ conf_matrix <- confusionMatrix(idScores$Predicted, idScores$Actual)
 
 # View results
 print(conf_matrix)
-
-
-
-
-
 
 
 # Convert the confusion matrix to a tidy format
@@ -406,7 +409,8 @@ server <- function(input, output, session) {
     ggplot(isoData, aes(x = Distance, y = Iso)) +
       geom_point(alpha = 0.7, color = "grey30", size = 2) +
       geom_line(aes(y = MovingAvg), color = "black", size = 2) +
-      geom_hline(yintercept = 0.7092, color = "dodgerblue4", size = 2, linetype = "dashed") +
+      geom_hline(yintercept = 1, color = "dodgerblue4", size = 2, linetype = "dashed") +
+      geom_hline(yintercept = 0, color = "firebrick", size = 2, linetype = "dashed") +
       theme_grey() +
       labs(title = paste("Iso vs. Distance for Fish ID:", selectedFish()),
            x = "Distance",
