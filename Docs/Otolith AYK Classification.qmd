@@ -1,0 +1,131 @@
+---
+title: "Otolith AYK Classification"
+format: html
+server: shiny
+---
+
+# AYK Salmon and the search for ocean provenance from Otoliths
+
+Insert text here about the problem. tldr; salmon are crashing in the AYK and we cant assess potential hypotheses about ocean mortality well without being able to assign fish to their given river of origin. Theory of otolith (3D thing, we can measure through image or Laser ablation, etc... people have looked at etc. etc. )
+
+# [**Data and Preprocessing**]{.underline}
+
+### [**Data sources**]{.underline}
+
+-   Here I will describe where these data are collected and how they get from the the watershed to the lab to the ICPMS etc.
+
+FIGURE: Map of the AYK with the watersheds outlined and a marker at the location which the fish are collected.
+
+-   A note about the final dataset \#'s per watershed here.
+
+## [Otolith "Timeseries"]{.underline}
+
+-   Description of the general structure of the timeseries data, includes a "Core", "freshwater region" and eventual movement to the marine etc. etc.
+
+-   FIGURE include a figure of an example
+
+#### [**Data Preprocessing and Cleaning**]{.underline} 
+
+-   Data was interpolated to 1000 reads...
+
+-   Data is noisy, so... GAM, MA, and RAW (explain). Interpolating, smoothing, cleaning.
+
+-   Manual QC was done to remove obvious errors, which may be caused by x, y, z,
+
+-   Manual QC assessed the general "quality" of the core, add landmarks to where it is assessed to begin
+
+-   Natal Origin selected following Makhlouf et al., 2025 etc...
+
+-   Ocean entry was automatically detected based on the rise in Sr88 etc.
+
+## [**Otolith Photos**]{.underline}
+
+-   Otolith photos were also taken to assess whether otolith morphology can be used to delineate among stocks... etc.
+
+-   Photos were taken... describe.
+
+-   FIGURE Example photo
+
+# Analysis
+
+## [Otolith Timeseries]{.underline}  
+
+## [Methods:]{.underline}
+
+## [Timeseries analysis:]{.underline} 
+
+### - PCA 
+
+### - Machine learning classification
+
+### - Dynamic Time warping (coming soon)? 
+
+-   ( All the above for Sr8786full, Sr8786by landmark, Sr88full, Sr88 by landmark, *soon* Sr88 \* Sr8786 and Sr88 + Sr8786)
+
+-   All the above for Raw, GAM, MA
+
+-   Figure with the different combinations data, tests, methods, etc.
+
+## [Otolith Morphological Analysis]{.underline} 
+
+\- Outline extraction and QC
+
+## Qualitative Analysis of variation in outlines by Class
+
+-   Mean
+
+-   PCA
+
+Dimensionality Reduction. Getting representations of the contours into meaningful ways. Gets to it to normal coordinates for traditional methods because we cant use them directly on the shape.
+
+\- Fourier + Wavelet Analysis
+
+## Classification 
+
+-   LDA
+
+-   RF
+
+-   Other? (from the argumentative paper)
+
+## [Results:]{.underline} 
+
+Did we answer the questions that we set out to answer.
+
+\*\* Decide how to display these here \*\*\*
+
+# [Interpretation , limitations, considerations]{.underline} 
+
+### TS Data 
+
+-   Discussion of important features or parts of the timeseries
+
+-   Preprocessing and/or lab processing steps
+
+-   Variation among years.
+
+-   Quantifying the "benefit" of adding additional data. \*\* DISCUSS WITH VALENTINA
+
+-   Thresholding \*\* DISCUSS WITH VALENTINA
+
+### Otolith Morphology 
+
+-   Discussion of feature importance
+
+-   Wavelet vs Fourier analysis +
+
+-   Normalization Landmarking
+
+# [Implementation into current models]{.underline} 
+
+-   Converting scores into proper probability values \*\* DISCUSS WITH VALENTINA
+
+    -   Tuning
+
+    -   The reliance of the calibration
+
+-   Using likelihoods from multiple sources (Sr88, Sr8786, Shape Analysis)\*\* DISCUSS WITH VALENTINA. - Ensamble model concept with a voting strategy.
+
+-   Maybe not ensamble but heirarchical
+
+-   IF Otolith Morphology is useful, implementation as a "first pass"
