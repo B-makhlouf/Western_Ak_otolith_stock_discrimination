@@ -126,7 +126,7 @@ load_processed_data <- function(data_type, landmark_filter) {
   # Construct the filename based on parameters
   landmark_str <- paste(landmark_filter, collapse = "_")
   filename <- paste0("Processed_", landmark_str, "_", data_type, ".csv")
-  file_path <- here("Data/Processed/Preprocessed_ts_matrices/", filename)
+  file_path <- here("/Users/benjaminmakhlouf/Research_repos/Western_Ak_otolith_stock_discrimination/Data/Classification_ts_matrices/Sr8786", filename)
   
   # Check if the file exists
   if (!file.exists(file_path)) {
