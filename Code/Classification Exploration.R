@@ -109,15 +109,10 @@ testdata <- ModelData[-trainIndex, ]
 traindata$Watershed <- as.factor(traindata$Watershed)
 testdata$Watershed <- as.factor(testdata$Watershed)
 
-# Balance the training data using downsampling (undersampling)
-library(caret)
-traindata_balanced <- downSample(x = traindata[, -ncol(traindata)], y = traindata$Watershed)
-
 # Set up cross-validation
 control <- trainControl(method = "cv", number = 5, classProbs = TRUE)  
 
 # Train Random Forest model
-set.seed(123)
 model <- train(Watershed ~ ., data = traindata, method = "rf", trControl = control)
 
 # Make predictions (both class labels and probabilities)

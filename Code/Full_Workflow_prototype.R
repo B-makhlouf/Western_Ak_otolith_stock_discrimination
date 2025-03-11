@@ -9,6 +9,7 @@ library(probably)
 library(discrim)
 library(dplyr)
 library(caret)
+library(cowplot)
 
 # Load data
 processed_data <- read.csv("/Users/benjaminmakhlouf/Research_repos/Western_Ak_otolith_stock_discrimination/Data/Processed/Preprocessed_ts_matrices/Processed_Core_Fw_GAM.csv")
@@ -49,65 +50,88 @@ testdata <- anti_join(ModelData, traindata, by = colnames(ModelData))
 testdata$Watershed <- factor(testdata$Watershed, levels = levels(traindata$Watershed))
 traindata$Watershed <- factor(traindata$Watershed, levels = levels(traindata$Watershed))
 
-# Are there NAs in traindata?
-sum(is.na(traindata))
 
 ### Train the model using tidymodels
 
 library(tidymodels)
 
+set.seed(123)  # For reproducibility
+cv_folds <- vfold_cv(traindata, v = 5, strata = Watershed) #Ensures stratified sampling based on the target variable
+
+rf_model <- rand_forest() %>%
+  set_mode("classification") %>%
+  set_engine("ranger")  # Use 'ranger' for efficient random forests
+
+rf_recipe <- recipe(Watershed ~ ., data = traindata) %>%
+  step_normalize(all_numeric_predictors()) %>%  # Normalize numeric predictors
+  step_dummy(all_nominal_predictors())  
+
+rf_workflow <- workflow() %>%
+  add_model(rf_model) %>%
+  add_recipe(rf_recipe)
+
+rf_results <- rf_workflow %>%
+  fit_resamples(
+    resamples = cv_folds,
+    metrics = metric_set(accuracy, roc_auc, sens, spec, f_meas),
+    control = control_resamples(save_pred = TRUE)
+  )
+
+rf_results %>% collect_metrics()
+
+final_rf_fit <- rf_workflow %>% fit(traindata)
+
+cal_pred <- predict(final_rf_fit, testdata, type = "prob") %>%
+  bind_cols(testdata)
+
 rf_fit<- rand_forest() %>%
   set_mode("classification") %>%
   fit(Watershed ~ ., data = traindata)
   
-rf_fit
-
 # Predict probabilities
 cal_pred<- 
   predict(rf_fit, testdata, type = "prob") %>%
   bind_cols(testdata)
 
+conf_mat(rf_predictions, truth = Watershed, estimate = .pred_class)
 
-cal_plot_windowed(cal_pred, truth = Watershed, window_size = 0.1, step_size = 0.03)
+################################################### TUNE ########################
 
-# Calibrate probabilities
+## First, visualize what the distribution looks like before 
+beforecal<-cal_plot_windowed(cal_pred, truth = Watershed, window_size = 0.2, step_size = 0.02)
+
+# Calibrate probabilities on the prediction set (testing data)
 smoothed_mn <- cal_estimate_multinomial(cal_pred, truth = Watershed)
 
+# Apply the calibration to the prediction set
 new_test_pred <- cal_apply(cal_pred, smoothed_mn)
 
-cal_plot_windowed(new_test_pred, truth = Watershed, window_size = 0.1, step_size = 0.03)
+# Visualize how things have changes
+aftercal<-cal_plot_windowed(new_test_pred, truth = Watershed, window_size = 0.2, step_size = 0.03)
 
+# Resample 
+metrics<-new_test_pred %>%
+  rsample::vfold_cv() %>%
+  cal_validate_multinomial(Watershed)%>%
+  collect_metrics()
 
+#Plot both plots one on top o another using cowplot
+beforecal <- beforecal + ggtitle("Before Calibration")
+aftercal <- aftercal + ggtitle("After Calibration")
 
+# Combine the plots
+plot_grid(beforecal, aftercal, ncol = 1) +
+  theme(legend.position = "none") + 
+  ggtitle("Before and After Calibration") + 
+  theme(plot.title = element_text(hjust = 0.5)) +
+  theme(axis.text.x = element_text(angle = 90, hjust = 1)) +
+  theme(axis.text.y = element_text(size = 8)) +
+  theme(axis.title = element_text(size = 10)) +
+  theme(legend.text = element_text(size = 8)) +
+  theme(legend.title = element_text(size = 10))
 
+###############################################################################################
 
+#
+#cal_validate_multinomial(new_test_pred, truth = Watershed, window_size = .2, step_size = .03)
 
-
-# Train model
-control <- trainControl(method = "cv", number = 5, classProbs = TRUE)
-
-model <- train(Watershed ~ ., data = traindata, method = "rf", trControl = control)
-
-
-
-
-
-# Predict probabilities
-probabilities <- predict(model, testdata, type = "prob")
-
-# Add true and predicted labels
-probabilities <- probabilities %>%
-  mutate(Truth = testdata$Watershed, Predicted = predict(model, testdata))
-
-# Calibrate probabilities
-class_prob_cols <- colnames(probabilities)[!colnames(probabilities) %in% c("Truth", "Predicted")]
-
-calibrated_probabilities <- cal_estimate_multinomial(
-  .data = probabilities,
-  truth = Truth,
-  estimate = all_of(class_prob_cols),
-  smooth = TRUE
-)
-
-#view results 
-calibrated_probabilities
