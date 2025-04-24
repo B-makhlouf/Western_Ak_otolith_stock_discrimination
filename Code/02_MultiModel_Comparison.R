@@ -29,14 +29,14 @@ source(here("Code/Helper_Code/Raw_Data_Preprocessing.R"))
 
 # Load metadata
 logger::log_info("Loading metadata")
-All_Metadata <- read.csv(here("Data/Final/Metadata_and_QC.csv"))
+All_Metadata <- read.csv(here("/Users/benjaminmakhlouf/Research_repos/04_Western_Ak_otolith_stock_discrimination/Data/Metadata and QC/Metadata_and_QC.csv"))
 
 ################################################################################
 # Configuration parameters
 ################################################################################
 
 # Define data types to iterate over
-data_types <- c("RAW", "GAM", "MA")
+data_types <- c("GAM", "MA")
 
 # Define landmark combinations to evaluate
 landmark_configs <- list(
@@ -60,7 +60,7 @@ random_seed <- 123
 # Create directories for outputs if they don't exist
 dirs <- c(
   here("Models/rf_models"), 
-  here("Models/svm_models"), 
+  here("Models/svmRadial_models"), 
   here("Models/knn_models"),
   here("Data/Train_Test_Sets"),
   here("Model_Results"),
@@ -83,9 +83,16 @@ run_model_comparison <- function(data_type, landmark_filter) {
   landmark_str <- paste(landmark_filter, collapse = "_")
   logger::log_info("Processing {data_type} data with landmarks: {landmark_str}")
   
+  # Process each combination of data type and landmark configuration
   # Load processed data for the current data_type and landmark config
   processed_data <- tryCatch({
-    load_processed_data(data_type, landmark_filter)
+    # Specifically look in the Preprocessed_ts_matrices directory
+    filename <- glue("Data/Preprocessed_ts_matrices/Processed_{landmark_str}_{data_type}.csv")
+    if(file.exists(here(filename))) {
+      read.csv(here(filename))
+    } else {
+      stop(glue("File not found: {filename}"))
+    }
   }, error = function(e) {
     logger::log_error("Error loading data: {e$message}")
     return(NULL)
@@ -233,6 +240,7 @@ for (data_type in data_types) {
       all_configurations_results <- bind_rows(all_configurations_results, results)
       
       # Save individual configuration results
+      # Initialize directories to save results
       result_filename <- glue("Model_Results/{data_type}_{landmark_str}_MultiModel_Results.csv")
       write.csv(results, result_filename, row.names = FALSE)
       logger::log_info("Saved results to {result_filename}")
