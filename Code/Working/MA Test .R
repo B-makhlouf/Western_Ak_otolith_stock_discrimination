@@ -1,21 +1,15 @@
 library(ggplot2)
 
 
-# 2021_yk_490
+# 2015_nk_044_redo
+# 2017_kk_208
+#2017_kk_114
+# 2019_kk_095
 
-# 2011_nk_34
-
-#2015_yk_380
-
-#2019_yk_070
-
-#2020_kk_022
-
-#2020_kk_070
 
 
 # YK_490
-yk_490<- read.csv("/Users/benjaminmakhlouf/Research_repos/Western_Ak_otolith_stock_discrimination/Data/Processed/Trim_Locations/2021_yk_490_trimLocations.csv") 
+yk_490<- read.csv("/Users/benjaminmakhlouf/Research_repos/04_Western_Ak_otolith_stock_discrimination/Data/Processed_ts/Trim_Locations/2015_nk_044_redo_trimLocations.csv") 
 
 # Add a 60 point moving average, a 80 point moving average, and a 40 point moving average 
 
@@ -29,12 +23,12 @@ k <- floor(100 * (nrow(df)^(2/9)))
 
 # # Adjustable parameters
 # k_value <- 200  # Controls complexity (higher = more flexible, lower = smoother)
-gamma_value <- .6 # Controls smoothing penalty (lower = more sensitive, higher = smoother)
+gamma_value <- .8 # Controls smoothing penalty (lower = more sensitive, higher = smoother)
 
 # Compute GAM-smoothed values
 df <- data.frame(Microns = yk_490$Microns, Iso = yk_490$Iso)
 
-model <- gam(Iso ~ s(Microns, bs = "tp", k = k_value), gamma = gamma_value, data = df)
+model <- gam(Iso ~ s(Microns, bs = "tp", k = k), gamma = gamma_value, data = df)
               
 yk_490$Iso_GAM <- predict(model, newdata = data.frame(Microns = yk_490$Microns))       
 
@@ -60,7 +54,7 @@ ggplot(yk_490, aes(x= Microns, y= Iso)) +
 
 
 # Nk_34
-nk_34<- read.csv("/Users/benjaminmakhlouf/Research_repos/Western_Ak_otolith_stock_discrimination/Data/Processed/Trim_Locations/2011_nk_34_trimLocations.csv")
+nk_34<- read.csv("/Users/benjaminmakhlouf/Research_repos/04_Western_Ak_otolith_stock_discrimination/Data/Processed_ts/Trim_Locations/2017_kk_114_trimLocations.csv")
 
 
 
@@ -81,14 +75,14 @@ gamma_value <- .6 # Controls smoothing penalty (lower = more sensitive, higher =
 # Compute GAM-smoothed values
 df <- data.frame(Microns = nk_34$Microns, Iso = nk_34$Iso)
 
-model <- gam(Iso ~ s(Microns, bs = "tp", k = k_value), gamma = gamma_value, data = df)
+model <- gam(Iso ~ s(Microns, bs = "tp", k = k), gamma = gamma_value, data = df)
 
 nk_34$Iso_GAM <- predict(model, newdata = data.frame(Microns = nk_34$Microns))
 
 # Compute a gam the old way 
 
 k <- floor(15 * (nrow(df)^(2/9)))                  
-gamma_value <- 1.4
+gamma_value <- 1.0
 
 model <- gam(Iso ~ s(Microns, bs = "tp", k = k), gamma = gamma_value, data = df)
 nk_34$Iso_GAM_original <- predict(model, newdata = data.frame(Microns = nk_34$Microns))

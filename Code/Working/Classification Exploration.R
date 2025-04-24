@@ -12,9 +12,9 @@ rm(list = ls())
 
 ######################
 
-source(here("/Users/benjaminmakhlouf/Research_repos/Western_Ak_otolith_stock_discrimination/Code/Helper Code/PCA_functions.R"))### This script contains helper functions to run PCA and a few important figures
+source(here("/Users/benjaminmakhlouf/Research_repos/04_Western_Ak_otolith_stock_discrimination/Code/Helper Code/PCA_functions.R"))### This script contains helper functions to run PCA and a few important figures
 #source(here("/Users/benjaminmakhlouf/Research_repos/Western_Ak_otolith_stock_discrimination/Code/Helper Code/Raw_Data_Preprocessing.R"))
-All_Metadata<- read.csv(here("Data/Final/Metadata_and_QC.csv"))
+All_Metadata<- read.csv(here("Data/Metadata and QC/Metadata_and_QC.csv"))
 
 ########### Read in the most recent processed data 
 ################################################################################
@@ -23,8 +23,9 @@ data_type <- "RAW"  # Choose from "RAW", "MA", or "GAM"
 landmark_filter <- c("Core", "Fw")  # Specify landmarks used during processing
 
 # Load the processed data
-processed_data <- read.csv("/Users/benjaminmakhlouf/Research_repos/Western_Ak_otolith_stock_discrimination/Data/Processed/Preprocessed_ts_matrices/Processed_Core_Fw_GAM.csv")
+processed_data <- read.csv("/Users/benjaminmakhlouf/Research_repos/04_Western_Ak_otolith_stock_discrimination/Data/Preprocessed_ts_matrices/Processed_Core_Fw_GAM.csv")
 #processed_data2<- read.csv("/Users/benjaminmakhlouf/Research_repos/Western_Ak_otolith_stock_discrimination/Data/Processed/Preprocessed_ts_matrices/Processed_Core_Fw_Sr88.csv")
+
 
 # Merge iso_data_raw with All_Metadata based on Fish_id and Fish_ID
 AnalysisDataAll <- processed_data %>%

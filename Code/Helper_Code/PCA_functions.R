@@ -80,7 +80,7 @@ pca_plot <- function(PCA_full, pca_x = 1, pca_y = 2) {
   
   # PCA plot by Watershed
   pca_plot <- ggplot(PCA_full, aes_string(x = pca_x_col, y = pca_y_col, color = "Watershed")) +
-    geom_point(size = 2, alpha = .2) +
+    geom_point(size = 2, alpha = .5) +
     theme_classic() +
     labs(title = "PCA of Iso Values by Watershed",
          x = pca_x_col,

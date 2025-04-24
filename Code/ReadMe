@@ -1,0 +1,60 @@
+# Western Alaska Stock Discrimination Analysis
+
+## Data Processing Pipeline
+
+### Raw Data Preparation
+Raw time series data is located in:  
+`Data/Raw/LA Data/`
+
+1. **Natal Origin Selection**  
+   - *Location*: Separate repository (external script)  
+   - *Purpose*: Manually select start/end locations of natal origin region
+
+2. **Automated Freshwater Trim**  
+   - *Script*: `Code/raw_data_cleaning/data_trimming`  
+   - *Action*: Adds trim line at end of freshwater region based on gradient analysis  
+   - *Output*: Identifies beginning of marine region
+
+3. **Quality Control**  
+   - *Script*: `Code/raw_data_cleaning/QC_interactive`  
+   - *Features*:
+     - Evaluates data quality
+     - Validates trim locations from Step 2
+     - Assesses core presence/quality
+   - *Output*: CSV file with individual QC ratings
+
+4. **Core Alignment**  
+   - *Script*: `Code/raw_data_cleaning/core_trimming`  
+   - *Process*: 
+     - Uses QC data from Step 3
+     - Manual selection of timeseries start (nearest core point)
+
+---
+
+## Analysis Preparation
+
+### Time Series Preprocessing
+#### `Code/Preprocess_ts_Matrices.R`
+
+**Transforms cleaned data into ML-ready formats by:**
+- Applying smoothing algorithms (GAM + moving averages)
+- Normalizing Sr88 values relative to landmarks
+- Generating length-standardized matrices
+
+**Parameters**  
+| Parameter | Default | Description |
+|-----------|---------|-------------|
+| `window_size` | 60 | Moving average window width (microns) |
+| `gamma_value` | 0.8 | GAM smoothing intensity |
+| `landmark_filter` | `c("Core","Fw")` | Regions to include in analysis |
+
+**Output Files**  
+All saved to: `Data/Processed/Preprocessed_ts_matrices/`
+
+| File | Contents |
+|------|----------|
+| `Processed_[landmarks]_GAM.csv` | Smoothed Sr87/86 ratios |
+| `Processed_[landmarks]_MA.csv` | Moving average values |
+| `Processed_[landmarks]_Sr88.csv` | Normalized Sr88 concentrations |
+| `Processed_[landmarks]_Combined.csv` | Composite metric (Sr87/86 ÷ Sr88 gradient) |
+

@@ -1,5 +1,5 @@
 # This script is to automatically populate the metadata for otolith shape analysis 
-MasterDirectory<- "/Users/benjaminmakhlouf/Research_repos/Western_Ak_otolith_stock_discrimination/ShapeAnalysis/Original"
+MasterDirectory<- "/Users/benjaminmakhlouf/Research_repos/04_Western_Ak_otolith_stock_discrimination/ShapeAnalysis/Original"
 
 # list the directories within 
 directories<- list.dirs(MasterDirectory, full.names = FALSE, recursive = FALSE)
