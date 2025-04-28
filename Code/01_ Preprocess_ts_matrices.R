@@ -280,11 +280,7 @@ process_single_file <- function(file_path, window_size, gamma_value, landmark_fi
     return(list(skipped = TRUE))
   }
   
-  # Check marine region size
-  if (!check_marine_region_size(ind_data, min_marine_size)) {
-    log_info(paste("Skipping", metadata$fish_id, "- insufficient marine region"))
-    return(list(skipped = TRUE))
-  }
+  
   
   # Calculate moving averages
   ind_data <- calculate_moving_averages(ind_data, window_size)
@@ -347,29 +343,7 @@ extract_metadata <- function(ind_data) {
   ))
 }
 
-#' Check if marine region is large enough
-#'
-#' @param ind_data Data frame containing raw otolith data
-#' @param min_size Minimum size in microns
-#' @return TRUE if marine region is large enough, FALSE otherwise
-check_marine_region_size <- function(ind_data, min_size) {
-  # Calculate the microns at the end of the dataset 
-  end_microns <- max(ind_data$Microns, na.rm = TRUE)
-  
-  # Check if Fw landmark exists
-  if (!"Fw" %in% ind_data$Landmark) {
-    return(FALSE)
-  }
-  
-  # Calculate the microns at the end of the FW region 
-  fw_end_microns <- max(ind_data$Microns[ind_data$Landmark == "Fw"], na.rm = TRUE)
-  
-  # Find the difference between the end of the dataset and the end of the FW region
-  fw_end_diff <- end_microns - fw_end_microns
-  
-  # Return TRUE if marine region is large enough
-  return(fw_end_diff >= min_size)
-}
+
 
 #' Calculate moving averages for Sr8786
 #'

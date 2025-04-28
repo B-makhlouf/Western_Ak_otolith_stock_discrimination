@@ -40,8 +40,6 @@ data_types <- c("GAM", "MA")
 
 # Define landmark combinations to evaluate
 landmark_configs <- list(
-  c("Core"),
-  c("Fw"),
   c("Core", "Fw")
 )
 
