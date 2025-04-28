@@ -7,8 +7,8 @@
 # 
 # OUTPUTS:
 # - Trained models saved to Models/[model_type]/[model_name].rds
-# - Model evaluation metrics saved to Model_Results/[data_type]_[landmarks]_MultiModel_Results.csv
-# - Performance visualization plots saved to Figures/ModelOutputs/
+# - Comprehensive results summary saved to Model_Results/Comprehensive_Model_Results.csv
+# - A comprehensive heatmap visualization saved to Figures/ModelOutputs/Model_Performance_Heatmap.png
 # - Training and testing datasets saved for model tuning
 #
 ################################################################################
@@ -16,7 +16,6 @@
 # Load necessary libraries
 library(viridis)      # For color palettes
 library(patchwork)    # For combining plots
-library(plotly)       # For interactive plots
 library(tidyverse)    # For data manipulation
 library(here)         # For file path management
 library(caret)        # For model training
@@ -29,14 +28,14 @@ source(here("Code/Helper_Code/Raw_Data_Preprocessing.R"))
 
 # Load metadata
 logger::log_info("Loading metadata")
-All_Metadata <- read.csv(here("/Users/benjaminmakhlouf/Research_repos/04_Western_Ak_otolith_stock_discrimination/Data/Metadata and QC/Metadata_and_QC.csv"))
+All_Metadata <- read.csv(here("/Users/benjaminmakhlouf/Research_repos/04_Western_Ak_otolith_stock_discrimination/Data/01_Metadata and QC/Metadata_and_QC.csv"))
 
 ################################################################################
 # Configuration parameters
 ################################################################################
 
 # Define data types to iterate over
-data_types <- c("GAM", "MA")
+data_types <- c("GAM", "MA", "RAW")
 
 # Define landmark combinations to evaluate
 landmark_configs <- list(
@@ -60,7 +59,7 @@ dirs <- c(
   here("Models/rf_models"), 
   here("Models/svmRadial_models"), 
   here("Models/knn_models"),
-  here("Data/Train_Test_Sets"),
+  here("Data/03_Train_Test_Sets"),
   here("Model_Results"),
   here("Figures/ModelOutputs")
 )
@@ -85,7 +84,7 @@ run_model_comparison <- function(data_type, landmark_filter) {
   # Load processed data for the current data_type and landmark config
   processed_data <- tryCatch({
     # Specifically look in the Preprocessed_ts_matrices directory
-    filename <- glue("Data/Preprocessed_ts_matrices/Processed_{landmark_str}_{data_type}.csv")
+    filename <- glue("Data/02_Preprocessed_ts_matrices/Processed_{landmark_str}_{data_type}.csv")
     if(file.exists(here(filename))) {
       read.csv(here(filename))
     } else {
@@ -124,7 +123,7 @@ run_model_comparison <- function(data_type, landmark_filter) {
   testdata <- ModelData[-trainIndex, ]
   
   # Save train and test datasets for later tuning
-  train_test_filename <- glue("Data/Train_Test_Sets/{data_type}_{landmark_str}_train_test_data.rds")
+  train_test_filename <- glue("Data/03_Train_Test_Sets/{data_type}_{landmark_str}_train_test_data.rds")
   saveRDS(list(train = traindata, test = testdata, 
                train_metadata = Analysis_metadata[trainIndex, ],
                test_metadata = Analysis_metadata[-trainIndex, ]),
@@ -174,11 +173,6 @@ run_model_comparison <- function(data_type, landmark_filter) {
     idScores <- idScores %>%
       mutate(Predicted = as.factor(Predicted), Actual = as.factor(Actual))
     
-    # Save detailed prediction results
-    pred_filename <- glue("Model_Results/Predictions/{data_type}_{landmark_str}_{model_type}_predictions.csv")
-    dir.create(dirname(pred_filename), showWarnings = FALSE, recursive = TRUE)
-    write.csv(idScores, pred_filename, row.names = FALSE)
-    
     # Compute confusion matrix
     conf_matrix <- confusionMatrix(idScores$Predicted, idScores$Actual)
     
@@ -192,21 +186,23 @@ run_model_comparison <- function(data_type, landmark_filter) {
     # Delete the row names 
     rownames(class_metrics) <- NULL
     
-    # Remove "Class:_" from class names using gsub
+    # Remove "Class: " from class names using gsub
     class_metrics$Watershed <- gsub("Class: ", "", class_metrics$Watershed)
+    
+    # Calculate F1 score for each class
+    class_metrics$F1 <- with(class_metrics, 2 * Sensitivity * `Pos Pred Value` / (Sensitivity + `Pos Pred Value`))
     
     # Combine training, testing, accuracy, and class metrics into a single dataframe
     results_df <- train_counts %>%
       full_join(test_counts, by = "Watershed") %>%
       full_join(class_metrics, by = "Watershed") %>%
-      mutate(Overall_Accuracy = overall_accuracy)
-    
-    # Add model specifications to the results dataframe
-    results_df <- results_df %>%
       mutate(
-        Model_Landmarks = paste(landmark_filter, collapse = ","),
+        Overall_Accuracy = overall_accuracy,
+        # Add configuration identifiers for the summary CSV
         Data_Type = data_type,
-        Model_Method = model_type
+        Model_Method = model_type,
+        Landmark_Config = paste(landmark_filter, collapse = "_"),
+        Config_ID = paste(data_type, paste(landmark_filter, collapse = "_"), model_type, sep = "_")
       )
     
     # Append to the main results dataframe
@@ -214,6 +210,172 @@ run_model_comparison <- function(data_type, landmark_filter) {
   }
   
   return(all_results_df)
+}
+
+################################################################################
+# Function to create a comprehensive performance heatmap
+################################################################################
+
+create_performance_heatmap <- function(results_df) {
+  # Clean up data for visualization
+  heatmap_data <- results_df %>%
+    mutate(
+      # Create a nice label for the data type + landmarks
+      DataConfig = case_when(
+        Data_Type == "RAW" & Landmark_Config == "Core_Fw" ~ "Sr88",
+        Data_Type == "MA" & Landmark_Config == "Core_Fw" ~ "Sr8786_MA",
+        Data_Type == "GAM" & Landmark_Config == "Core_Fw" ~ "Sr8786_GAM",
+        TRUE ~ paste(Data_Type, Landmark_Config, sep="_")
+      )
+    )
+  
+  # Format labels properly - make sure to vectorize this function
+  label_formatter <- function(value) {
+    sapply(value, function(x) {
+      if(is.na(x)) return("")
+      return(sprintf("%.2f", x))
+    })
+  }
+  
+  # Prepare the overall metrics section
+  overall_metrics <- heatmap_data %>%
+    group_by(DataConfig, Model_Method) %>%
+    summarize(
+      `Overall Accuracy` = first(Overall_Accuracy),
+      `Overall F1 Score` = mean(F1, na.rm = TRUE),
+      `Overall Specificity` = mean(Specificity, na.rm = TRUE),
+      .groups = "drop"
+    )
+  
+  # Create data frames for each metric to plot as separate heatmaps
+  accuracy_data <- overall_metrics %>% 
+    select(DataConfig, Model_Method, `Overall Accuracy`) %>%
+    rename(Value = `Overall Accuracy`)
+  
+  f1_data <- overall_metrics %>% 
+    select(DataConfig, Model_Method, `Overall F1 Score`) %>%
+    rename(Value = `Overall F1 Score`)
+  
+  specificity_data <- overall_metrics %>% 
+    select(DataConfig, Model_Method, `Overall Specificity`) %>%
+    rename(Value = `Overall Specificity`)
+  
+  # Create dataframes for watershed-specific metrics
+  nushagak_data <- heatmap_data %>%
+    filter(Watershed == "Nush") %>%
+    select(DataConfig, Model_Method, Sensitivity) %>%
+    rename(Value = Sensitivity)
+  
+  kuskokwim_data <- heatmap_data %>%
+    filter(Watershed == "Kusko") %>%
+    select(DataConfig, Model_Method, Sensitivity) %>%
+    rename(Value = Sensitivity)
+  
+  yukon_data <- heatmap_data %>%
+    filter(Watershed == "Yukon") %>%
+    select(DataConfig, Model_Method, Sensitivity) %>%
+    rename(Value = Sensitivity)
+  
+  # Create the heatmap plots
+  p_accuracy <- ggplot(accuracy_data, aes(x = Model_Method, y = DataConfig, fill = Value)) +
+    geom_tile(color = "white", linewidth = 0.5) +
+    geom_text(aes(label = label_formatter(Value)), color = "black", size = 3.5) +
+    scale_fill_viridis_c(option = "viridis", limits = c(0, 1)) +
+    labs(title = "Overall Accuracy") +
+    theme_minimal() +
+    theme(
+      axis.text.x = element_text(angle = 45, hjust = 1),
+      axis.title = element_blank(),
+      legend.position = "none",
+      panel.grid = element_blank(),
+      plot.title = element_text(size = 10, face = "bold", hjust = 0.5)
+    )
+  
+  p_f1 <- ggplot(f1_data, aes(x = Model_Method, y = DataConfig, fill = Value)) +
+    geom_tile(color = "white", linewidth = 0.5) +
+    geom_text(aes(label = label_formatter(Value)), color = "black", size = 3.5) +
+    scale_fill_viridis_c(option = "viridis", limits = c(0, 1)) +
+    labs(title = "Overall F1 Score") +
+    theme_minimal() +
+    theme(
+      axis.text.x = element_text(angle = 45, hjust = 1),
+      axis.title = element_blank(),
+      legend.position = "none",
+      panel.grid = element_blank(),
+      plot.title = element_text(size = 10, face = "bold", hjust = 0.5)
+    )
+  
+  p_specificity <- ggplot(specificity_data, aes(x = Model_Method, y = DataConfig, fill = Value)) +
+    geom_tile(color = "white", linewidth = 0.5) +
+    geom_text(aes(label = label_formatter(Value)), color = "black", size = 3.5) +
+    scale_fill_viridis_c(option = "viridis", limits = c(0, 1)) +
+    labs(title = "Overall Specificity") +
+    theme_minimal() +
+    theme(
+      axis.text.x = element_text(angle = 45, hjust = 1),
+      axis.title = element_blank(),
+      legend.position = "none",
+      panel.grid = element_blank(),
+      plot.title = element_text(size = 10, face = "bold", hjust = 0.5)
+    )
+  
+  p_nushagak <- ggplot(nushagak_data, aes(x = Model_Method, y = DataConfig, fill = Value)) +
+    geom_tile(color = "white", linewidth = 0.5) +
+    geom_text(aes(label = label_formatter(Value)), color = "black", size = 3.5) +
+    scale_fill_viridis_c(option = "viridis", limits = c(0, 1)) +
+    labs(title = "Nushagak Accuracy") +
+    theme_minimal() +
+    theme(
+      axis.text.x = element_text(angle = 45, hjust = 1),
+      axis.title = element_blank(),
+      legend.position = "none",
+      panel.grid = element_blank(),
+      plot.title = element_text(size = 10, face = "bold", hjust = 0.5)
+    )
+  
+  p_kuskokwim <- ggplot(kuskokwim_data, aes(x = Model_Method, y = DataConfig, fill = Value)) +
+    geom_tile(color = "white", linewidth = 0.5) +
+    geom_text(aes(label = label_formatter(Value)), color = "black", size = 3.5) +
+    scale_fill_viridis_c(option = "viridis", limits = c(0, 1)) +
+    labs(title = "Kuskokwim Accuracy") +
+    theme_minimal() +
+    theme(
+      axis.text.x = element_text(angle = 45, hjust = 1),
+      axis.title = element_blank(),
+      legend.position = "none",
+      panel.grid = element_blank(),
+      plot.title = element_text(size = 10, face = "bold", hjust = 0.5)
+    )
+  
+  p_yukon <- ggplot(yukon_data, aes(x = Model_Method, y = DataConfig, fill = Value)) +
+    geom_tile(color = "white", linewidth = 0.5) +
+    geom_text(aes(label = label_formatter(Value)), color = "black", size = 3.5) +
+    scale_fill_viridis_c(option = "viridis", limits = c(0, 1)) +
+    labs(title = "Yukon Accuracy") +
+    theme_minimal() +
+    theme(
+      axis.text.x = element_text(angle = 45, hjust = 1),
+      axis.title = element_blank(),
+      legend.position = "none",
+      panel.grid = element_blank(),
+      plot.title = element_text(size = 10, face = "bold", hjust = 0.5)
+    )
+  
+  # Combine plots into a grid
+  top_row <- p_accuracy + p_f1 + p_specificity + plot_layout(ncol = 3)
+  bottom_row <- p_nushagak + p_kuskokwim + p_yukon + plot_layout(ncol = 3)
+  
+  combined_plot <- top_row / bottom_row +
+    plot_annotation(
+      title = "Model Performance Comparison",
+      subtitle = "Evaluation across different metrics and watershed classes",
+      theme = theme(
+        plot.title = element_text(size = 14, face = "bold", hjust = 0.5),
+        plot.subtitle = element_text(size = 10, hjust = 0.5)
+      )
+    )
+  
+  return(combined_plot)
 }
 
 ################################################################################
@@ -236,157 +398,46 @@ for (data_type in data_types) {
     if (!is.null(results)) {
       # Append results to the complete results dataframe
       all_configurations_results <- bind_rows(all_configurations_results, results)
-      
-      # Save individual configuration results
-      # Initialize directories to save results
-      result_filename <- glue("Model_Results/{data_type}_{landmark_str}_MultiModel_Results.csv")
-      write.csv(results, result_filename, row.names = FALSE)
-      logger::log_info("Saved results to {result_filename}")
-      
-      # Generate and save visualization plots for this configuration
-      watershed_colors <- c(
-        "Yukon" = "#1f77b4",    # Blue 
-        "Nush" = "#ff7f0e",     # Orange
-        "Kusko" = "#2ca02c"     # Green
-      )
-      
-      # Create plot title
-      landmark_title <- paste(landmark_str, data_type, sep = "_")
-      
-      # Sensitivity plot (recall)
-      sensitivityplot <- ggplot(results, aes(x = Watershed, y = Sensitivity, fill = Watershed)) +
-        geom_bar(stat = "identity", position = "dodge", alpha = .7) +
-        facet_grid(. ~ Model_Method, scales = "free_y") +
-        labs(
-          title = glue("{landmark_title} - Sensitivity (Recall)"),
-          x = "Watershed",
-          y = "Sensitivity"
-        ) +
-        theme_grey() +
-        theme(
-          axis.text.x = element_text(angle = 45, hjust = 1),
-          strip.text = element_text(size = 12),
-          strip.background = element_blank()
-        ) +
-        scale_y_continuous(limits = c(0, 1)) +
-        scale_fill_manual(values = watershed_colors) +
-        geom_text(
-          aes(label = round(Sensitivity, 2)),
-          position = position_dodge(width = 0.8),
-          vjust = -0.5,
-          color = "black",
-          size = 3
-        )
-      
-      # Specificity plot (precision)  
-      specificityplot <- ggplot(results, aes(x = Watershed, y = Specificity, fill = Watershed)) +
-        geom_bar(stat = "identity", position = "dodge", alpha = .7) +
-        facet_grid(. ~ Model_Method, scales = "free_y") +
-        labs(
-          title = glue("{landmark_title} - Specificity (Precision)"),
-          x = "Watershed",
-          y = "Specificity"
-        ) +
-        theme_grey() +
-        theme(
-          axis.text.x = element_text(angle = 45, hjust = 1),
-          strip.text = element_text(size = 12),
-          strip.background = element_blank()
-        ) +
-        scale_y_continuous(limits = c(0, 1)) +
-        scale_fill_manual(values = watershed_colors) +
-        geom_text(
-          aes(label = round(Specificity, 2)),
-          position = position_dodge(width = 0.8),
-          vjust = -0.5,
-          color = "black",
-          size = 3
-        )
-      
-      # Balanced Accuracy plot
-      balanced_accuracy_plot <- ggplot(results, aes(x = Watershed, y = `Balanced Accuracy`, fill = Watershed)) +
-        geom_bar(stat = "identity", position = "dodge", alpha = .7) +
-        facet_grid(. ~ Model_Method, scales = "free_y") +
-        labs(
-          title = glue("{landmark_title} - Balanced Accuracy"),
-          x = "Watershed",
-          y = "Balanced Accuracy"
-        ) +
-        theme_grey() +
-        theme(
-          axis.text.x = element_text(angle = 45, hjust = 1),
-          strip.text = element_text(size = 12),
-          strip.background = element_blank()
-        ) +
-        scale_y_continuous(limits = c(0, 1)) +
-        scale_fill_manual(values = watershed_colors) +
-        geom_text(
-          aes(label = round(`Balanced Accuracy`, 2)),
-          position = position_dodge(width = 0.8),
-          vjust = -0.5,
-          color = "black",
-          size = 3
-        )
-      
-      # Save plots
-      ggsave(glue("Figures/ModelOutputs/{landmark_title}_Sensitivity.png"), 
-             sensitivityplot, width = 12, height = 6, dpi = 300)
-      ggsave(glue("Figures/ModelOutputs/{landmark_title}_Specificity.png"), 
-             specificityplot, width = 12, height = 6, dpi = 300)
-      ggsave(glue("Figures/ModelOutputs/{landmark_title}_Balanced_Accuracy.png"), 
-             balanced_accuracy_plot, width = 12, height = 6, dpi = 300)
-      
-      logger::log_info("Saved visualization plots for {landmark_title}")
     }
   }
 }
 
-# Save complete results from all configurations
+# Save complete results to a single comprehensive CSV
 if (nrow(all_configurations_results) > 0) {
-  write.csv(all_configurations_results, "Model_Results/All_Configurations_Results.csv", row.names = FALSE)
-  logger::log_info("Saved complete results to Model_Results/All_Configurations_Results.csv")
+  # Save the comprehensive results file with all configurations
+  write.csv(all_configurations_results, "Model_Results/Comprehensive_Model_Results.csv", row.names = FALSE)
+  logger::log_info("Saved comprehensive results to Model_Results/Comprehensive_Model_Results.csv")
   
-  # Create a summary table of best models by Balanced Accuracy
-  summary_table <- all_configurations_results %>%
-    group_by(Data_Type, Model_Landmarks, Model_Method) %>%
+  # Create two versions of the results table for easier analysis
+  
+  # 1. Overall metrics by configuration
+  overall_metrics <- all_configurations_results %>%
+    group_by(Data_Type, Landmark_Config, Model_Method) %>%
     summarize(
-      Mean_Balanced_Accuracy = mean(`Balanced Accuracy`, na.rm = TRUE),
       Overall_Accuracy = first(Overall_Accuracy),
+      Mean_Balanced_Accuracy = mean(`Balanced Accuracy`, na.rm = TRUE),
+      Mean_F1 = mean(F1, na.rm = TRUE),
+      Mean_Specificity = mean(Specificity, na.rm = TRUE),
       .groups = "drop"
     ) %>%
-    arrange(desc(Mean_Balanced_Accuracy))
+    arrange(desc(Overall_Accuracy))
   
-  write.csv(summary_table, "Model_Results/Model_Comparison_Summary.csv", row.names = FALSE)
-  logger::log_info("Saved model comparison summary to Model_Results/Model_Comparison_Summary.csv")
+  write.csv(overall_metrics, "Model_Results/Overall_Metrics_Summary.csv", row.names = FALSE)
   
-  # Create a combined visualization of the top performing models
-  top_models <- summary_table %>%
-    top_n(5, Mean_Balanced_Accuracy)
+  # 2. Class-specific metrics by configuration
+  class_metrics <- all_configurations_results %>%
+    select(Data_Type, Landmark_Config, Model_Method, Watershed, 
+           Sensitivity, Specificity, `Pos Pred Value`, F1) %>%
+    arrange(Data_Type, Landmark_Config, Model_Method, Watershed)
   
-  top_config_ids <- paste(top_models$Data_Type, top_models$Model_Landmarks, top_models$Model_Method, sep = "_")
+  write.csv(class_metrics, "Model_Results/Class_Metrics_Summary.csv", row.names = FALSE)
   
-  top_results <- all_configurations_results %>%
-    mutate(ConfigID = paste(Data_Type, Model_Landmarks, Model_Method, sep = "_")) %>%
-    filter(ConfigID %in% top_config_ids)
+  # Create and save the comprehensive performance heatmap
+  perf_heatmap <- create_performance_heatmap(all_configurations_results)
   
-  top_models_plot <- ggplot(top_results, aes(x = Watershed, y = `Balanced Accuracy`, fill = ConfigID)) +
-    geom_bar(stat = "identity", position = "dodge", alpha = 0.8) +
-    labs(
-      title = "Top 5 Models by Mean Balanced Accuracy",
-      x = "Watershed",
-      y = "Balanced Accuracy",
-      fill = "Model Configuration"
-    ) +
-    theme_grey() +
-    theme(
-      axis.text.x = element_text(angle = 45, hjust = 1),
-      legend.position = "bottom"
-    ) +
-    scale_y_continuous(limits = c(0, 1))
-  
-  ggsave("Figures/ModelOutputs/Top_Models_Comparison.png", 
-         top_models_plot, width = 12, height = 8, dpi = 300)
-  logger::log_info("Saved top models comparison plot")
+  ggsave("Figures/ModelOutputs/Model_Performance_Heatmap.png", 
+         perf_heatmap, width = 12, height = 8, dpi = 300)
+  logger::log_info("Saved performance heatmap to Figures/ModelOutputs/Model_Performance_Heatmap.png")
 }
 
 logger::log_info("Model comparison completed successfully")

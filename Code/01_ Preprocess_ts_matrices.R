@@ -23,7 +23,7 @@ process_trimmed_data <- function(window_size = 60,
                                  landmark_filter = c("Core", "Fw"),
                                  post_fw_extension = 300,
                                  min_marine_size = 100,
-                                 output_dir = "Data/Processed/Preprocessed_ts_matrices") {
+                                 output_dir = "Data/02_Preprocessed_ts_matrices") {
   
   # Validate inputs
   validate_inputs(window_size, gamma_value, landmark_filter, post_fw_extension, min_marine_size, output_dir)
@@ -103,7 +103,7 @@ ensure_output_dir <- function(output_dir) {
 #'
 #' @return Character vector of file paths
 list_landmark_files <- function() {
-  files <- list.files("Data/Processed_ts/Landmarks", pattern = "*.csv", full.names = TRUE)
+  files <- list.files("Data/01_Processed_ts/Landmarks", pattern = "*.csv", full.names = TRUE)
   if (length(files) == 0) {
     stop("No landmark files found in 'Data/Processed/Landmarks'")
   }
@@ -594,8 +594,8 @@ process_trimmed_data(landmark_filter = c("Fw"))
 # Process with custom parameters
 process_trimmed_data(
   window_size = 40,            # Smaller window for moving average
-  gamma_value = 0.6,           # Different smoothing parameter
+  gamma_value = 0.8,           # Different smoothing parameter
   landmark_filter = c("Fw"),   # Just use Fw landmark
-  post_fw_extension = 200      # Include 200 microns after Fw instead of 300
+  post_fw_extension = 350      # Include 200 microns after Fw instead of 300
 )
 
