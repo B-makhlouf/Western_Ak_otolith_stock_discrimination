@@ -1,448 +1,599 @@
-################################################################################
-# 03_Model_Tuning.R
-# 
-# This script performs probability calibration and model tuning for the
-# best-performing models identified in the model comparison step.
-# 
-# It:
-# 1. Loads the best-performing model(s) based on balanced accuracy
-# 2. Calibrates model probabilities to reflect true probabilities
-# 3. Evaluates calibration performance
-# 4. Saves calibrated models
-#
-# OUTPUTS:
-# - Calibrated models saved to Models/Calibrated/[model_name]_calibrated.rds
-# - Calibration performance plots saved to Figures/Calibration/
-# - Calibration metrics saved to Model_Results/Calibration/
-#
-################################################################################
+######### Model_Probability_Calibration.R #########
+# Calibrates model probabilities and evaluates performance on test data
+# Creates pre/post-calibration visualizations with performance metrics
 
-# Load necessary libraries
-library(tidyverse)    # For data manipulation
-library(here)         # For file path management
-library(caret)        # For model training
-library(probably)     # For probability calibration
-library(glue)         # For string interpolation
-library(logger)       # For logging
-library(pROC)         # For ROC curves
-library(ggplot2)      # For plotting
-library(cowplot)      # For combining plots
+library(tidyverse)
+library(caret)
+library(ggplot2)
+library(gridExtra)
+library(here)
+library(probably) # For probability calibration functions
 
-# Create directories for outputs if they don't exist
-dirs <- c(
-  here("Models/Calibrated"),
-  here("Figures/Calibration"),
-  here("Model_Results/Calibration")
-)
-
-for(dir in dirs) {
-  if(!dir.exists(dir)) {
-    dir.create(dir, recursive = TRUE)
-    logger::log_info("Created directory: {dir}")
+# Create necessary directories
+dirs <- c("Data/Calibrated_Models", "Figures/Calibration", "Data/Calibration_Results")
+for (dir in dirs) {
+  if (!dir.exists(here(dir))) {
+    dir.create(here(dir), recursive = TRUE)
   }
 }
 
-################################################################################
-# 1. Find the best-performing models from the comparison results
-################################################################################
+# Load comprehensive results to identify models to calibrate
+all_results <- read.csv(here("Data/Model_Results/ALL_Models_Results.csv"))
 
-logger::log_info("Identifying best models from comparison results")
-
-# Load the summary results from the comparison step
-summary_file <- here("Model_Results/Model_Comparison_Summary.csv")
-
-if(!file.exists(summary_file)) {
-  stop("Model comparison summary file not found. Run 02_MultiModel_Comparison.R first.")
+# Function to load model and its test data
+load_model_and_test_data <- function(data_type, model_method, landmark_filter) {
+  # Format identifier
+  landmark_str <- paste(landmark_filter, collapse = "_")
+  data_identifier <- paste(data_type, model_method, landmark_str, sep = "_")
+  
+  # Load model
+  model_path <- here(paste0("Models/", model_method, "_models/", data_identifier, ".rds"))
+  if (!file.exists(model_path)) {
+    stop("Model file not found: ", model_path)
+  }
+  model <- readRDS(model_path)
+  
+  # Load test data
+  data_path <- here(paste0("Data/Train_Test_Sets/", data_identifier, "_datasets.rds"))
+  if (!file.exists(data_path)) {
+    stop("Test data file not found: ", data_path)
+  }
+  train_test_data <- readRDS(data_path)
+  
+  return(list(model = model, test_data = train_test_data$test, 
+              test_metadata = train_test_data$test_metadata))
 }
 
-model_summary <- read.csv(summary_file)
-
-# Get the top model configuration for each watershed
-top_models <- model_summary %>%
-  group_by(Data_Type, Model_Method) %>%
-  top_n(1, Mean_Balanced_Accuracy) %>%
-  arrange(desc(Mean_Balanced_Accuracy))
-
-# Display the top models
-print(top_models)
-
-################################################################################
-# Function to calibrate a single model
-################################################################################
-
-calibrate_model <- function(data_type, landmark_str, model_method) {
+# Function to evaluate model performance
+evaluate_model <- function(predictions, true_values, probabilities = NULL) {
+  # Ensure factors
+  predictions <- as.factor(predictions)
+  true_values <- as.factor(true_values)
   
-  logger::log_info("Calibrating {model_method} model using {data_type} data with landmarks: {landmark_str}")
-  
-  # Load the saved train/test data
-  train_test_file <- glue("Data/Train_Test_Sets/{data_type}_{landmark_str}_train_test_data.rds")
-  
-  if(!file.exists(train_test_file)) {
-    logger::log_error("Train/test data file not found: {train_test_file}")
-    return(NULL)
+  # Match factor levels
+  if (!identical(levels(predictions), levels(true_values))) {
+    predictions <- factor(predictions, levels = levels(true_values))
   }
   
-  train_test_data <- readRDS(train_test_file)
+  # Compute confusion matrix
+  conf <- confusionMatrix(predictions, true_values)
   
-  traindata <- train_test_data$train
-  testdata <- train_test_data$test
-  test_metadata <- train_test_data$test_metadata
-  
-  # Load the trained model
-  # Path differs based on model method
-  model_dir <- switch(model_method,
-                      "rf" = "rf_models",
-                      "svmRadial" = "svm_models",
-                      "knn" = "knn_models",
-                      "rf_models") # Default to rf_models
-  
-  model_file <- glue("Models/{model_dir}/{model_method}_{data_type}_{landmark_str}.rds")
-  
-  if(!file.exists(model_file)) {
-    logger::log_error("Model file not found: {model_file}")
-    return(NULL)
-  }
-  
-  model <- readRDS(model_file)
-  
-  # Get raw predictions on test data
-  raw_pred <- predict(model, testdata, type = "prob")
-  raw_pred <- as.data.frame(raw_pred)
-  
-  # Combine predictions with actual classes for calibration
-  pred_df <- bind_cols(
-    raw_pred, 
-    actual = testdata$Watershed
+  # Extract performance metrics
+  metrics <- data.frame(
+    Accuracy = conf$overall["Accuracy"],
+    Kappa = conf$overall["Kappa"]
   )
   
-  # Create calibration results for each watershed
-  watersheds <- unique(testdata$Watershed)
-  
-  # Lists to store calibration results
-  cal_models <- list()
-  cal_plots <- list()
-  cal_metrics <- list()
-  
-  for(ws in watersheds) {
-    logger::log_info("Calibrating probabilities for {ws}")
-    
-    # Create binary classification problem for this watershed
-    binary_df <- pred_df %>%
-      mutate(
-        binary_actual = ifelse(actual == ws, "Yes", "No"),
-        binary_actual = factor(binary_actual, levels = c("Yes", "No")),
-        prob = raw_pred[[ws]]
-      )
-    
-    # Plot original calibration curve
-    before_cal <- binary_df %>%
-      cal_plot_windowed(
-        truth = binary_actual,
-        estimate = prob,
-        window_size = 0.1,
-        step_size = 0.025
-      ) +
-      ggtitle(glue("Before Calibration: {ws}")) +
-      theme_minimal()
-    
-    # Estimate calibration curve
-    cal_model <- cal_estimate_logistic(
-      binary_df,
-      truth = binary_actual,
-      estimate = prob
-    )
-    
-    # Apply calibration
-    calibrated_df <- cal_apply(binary_df, cal_model)
-    
-    # Plot calibrated curve
-    after_cal <- calibrated_df %>%
-      cal_plot_windowed(
-        truth = binary_actual,
-        estimate = .cal_estimate,
-        window_size = 0.1,
-        step_size = 0.025
-      ) +
-      ggtitle(glue("After Calibration: {ws}")) +
-      theme_minimal()
-    
-    # Compare calibration metrics
-    # Calculate AUC before calibration
-    roc_before <- roc(binary_df$binary_actual == "Yes", binary_df$prob)
-    auc_before <- auc(roc_before)
-    
-    # Calculate AUC after calibration
-    roc_after <- roc(calibrated_df$binary_actual == "Yes", calibrated_df$.cal_estimate)
-    auc_after <- auc(roc_after)
-    
-    # Calculate other metrics like Brier score
-    brier_before <- mean((as.numeric(binary_df$binary_actual == "Yes") - binary_df$prob)^2)
-    brier_after <- mean((as.numeric(calibrated_df$binary_actual == "Yes") - calibrated_df$.cal_estimate)^2)
-    
-    # Store results
-    cal_models[[ws]] <- cal_model
-    cal_plots[[ws]] <- plot_grid(before_cal, after_cal, ncol = 2)
-    
-    cal_metrics[[ws]] <- data.frame(
-      Watershed = ws,
-      AUC_Before = auc_before,
-      AUC_After = auc_after,
-      Brier_Before = brier_before,
-      Brier_After = brier_after,
-      Brier_Improvement = (brier_before - brier_after)/brier_before * 100
-    )
+  # Add class-specific metrics
+  for (class in levels(true_values)) {
+    if (class %in% rownames(conf$byClass)) {
+      class_metrics <- conf$byClass[class, ]
+      metrics[[paste0(class, "_Sensitivity")]] <- class_metrics["Sensitivity"]
+      metrics[[paste0(class, "_Specificity")]] <- class_metrics["Specificity"]
+      metrics[[paste0(class, "_F1")]] <- class_metrics["F1"]
+      metrics[[paste0(class, "_BalancedAccuracy")]] <- class_metrics["Balanced Accuracy"]
+    }
   }
   
-  # Combine all calibration metrics
-  all_metrics <- bind_rows(cal_metrics)
-  
-  # Save the combined calibration plot
-  combined_plot <- plot_grid(plotlist = cal_plots, ncol = 1)
-  plot_file <- glue("Figures/Calibration/{model_method}_{data_type}_{landmark_str}_calibration.png")
-  ggsave(plot_file, combined_plot, width = 12, height = 4 * length(watersheds), dpi = 300)
-  logger::log_info("Saved calibration plots to {plot_file}")
-  
-  # Save the calibration metrics
-  metrics_file <- glue("Model_Results/Calibration/{model_method}_{data_type}_{landmark_str}_cal_metrics.csv")
-  write.csv(all_metrics, metrics_file, row.names = FALSE)
-  logger::log_info("Saved calibration metrics to {metrics_file}")
-  
-  # Save the calibration models
-  cal_models_file <- glue("Models/Calibrated/{model_method}_{data_type}_{landmark_str}_cal_models.rds")
-  saveRDS(cal_models, cal_models_file)
-  logger::log_info("Saved calibration models to {cal_models_file}")
-  
-  # Create a prediction function that applies the calibration
-  predict_calibrated <- function(new_data, thresh = 0.5) {
-    # Make raw predictions
-    raw_probs <- predict(model, new_data, type = "prob") %>%
-      as.data.frame()
+  # If probabilities provided, add probability metrics
+  if (!is.null(probabilities)) {
+    # Log loss
+    log_loss <- 0
+    n <- length(true_values)
     
-    # Apply calibration to each watershed probability
-    calibrated_probs <- raw_probs
-    
-    for(ws in names(cal_models)) {
-      # Create temporary dataframe for calibration
-      temp_df <- data.frame(
-        prob = raw_probs[[ws]]
-      )
-      
-      # Apply calibration
-      calibrated <- cal_apply(temp_df, cal_models[[ws]])
-      
-      # Store calibrated probabilities
-      calibrated_probs[[ws]] <- calibrated$.cal_estimate
+    for (i in 1:n) {
+      class_idx <- which(levels(true_values) == true_values[i])
+      prob <- probabilities[i, class_idx]
+      # Avoid log(0)
+      prob <- max(min(prob, 0.99999), 0.00001)
+      log_loss <- log_loss - log(prob)/n
     }
     
-    # Determine class predictions based on highest calibrated probability
-    class_idx <- apply(calibrated_probs, 1, which.max)
-    classes <- colnames(calibrated_probs)[class_idx]
+    metrics$LogLoss <- log_loss
     
-    # Confidence scores
-    confidence <- apply(calibrated_probs, 1, max)
+    # Brier score (mean squared error of probabilities)
+    brier_score <- 0
+    for (i in 1:n) {
+      actual_probs <- rep(0, length(levels(true_values)))
+      actual_probs[which(levels(true_values) == true_values[i])] <- 1
+      brier_score <- brier_score + sum((probabilities[i,] - actual_probs)^2)/n
+    }
     
-    # Return results
-    list(
-      class = classes,
-      calibrated_probabilities = calibrated_probs,
-      confidence = confidence
+    metrics$BrierScore <- brier_score
+  }
+  
+  return(list(conf_matrix = conf, metrics = metrics))
+}
+
+# Function to calibrate a model and create visualization
+calibrate_model <- function(data_type, model_method, landmark_filter) {
+  # Load model and test data
+  model_data <- load_model_and_test_data(data_type, model_method, landmark_filter)
+  model <- model_data$model
+  test_data <- model_data$test_data
+  
+  # Create model info
+  model_info <- list(
+    Data_Type = data_type,
+    Model_Method = model_method,
+    Landmark_Filter = paste(landmark_filter, collapse = "_")
+  )
+  
+  # Get original predictions and probabilities
+  predictions <- predict(model, test_data)
+  probabilities <- predict(model, test_data, type = "prob")
+  
+  # Evaluate original model
+  original_eval <- evaluate_model(predictions, test_data$Watershed, probabilities)
+  
+  # Get unique watersheds
+  watersheds <- colnames(probabilities)
+  
+  # Create pre-calibration plots and calibrators
+  pre_cal_plots <- list()
+  cal_estimators <- list()
+  
+  for (ws in watersheds) {
+    # Create binary target for this watershed
+    binary_results <- data.frame(
+      actual = test_data$Watershed == ws,
+      prob = probabilities[, ws]
+    )
+    
+    # Create pre-calibration plot
+    pre_cal_plots[[ws]] <- cal_plot_windowed(
+      binary_results, truth = actual, estimate = prob, 
+      window_size = 0.2, step_size = 0.05
+    ) +
+      ggtitle(paste("Pre-Calibration:", ws)) +
+      theme_minimal() +
+      coord_equal() +
+      theme(plot.title = element_text(size = 10))
+    
+    # Create calibration estimator
+    cal_estimators[[ws]] <- cal_estimate_logistic(
+      binary_results, truth = actual, estimate = prob
     )
   }
   
-  # Create a calibrated model object
-  calibrated_model <- list(
-    base_model = model,
-    cal_models = cal_models,
-    predict = predict_calibrated,
-    model_info = list(
-      data_type = data_type,
-      landmark_str = landmark_str,
-      model_method = model_method
+  # Create combined pre-calibration plot
+  pre_cal_combined <- grid.arrange(
+    grobs = pre_cal_plots,
+    ncol = length(watersheds),
+    top = paste("Pre-Calibration Curves -", 
+                data_type, "-", model_method, "-", paste(landmark_filter, collapse = "_"))
+  )
+  
+  # Save pre-calibration plot
+  ggsave(
+    here(paste0("Figures/Calibration/Pre_Calibration_", data_type, "_", 
+                model_method, "_", paste(landmark_filter, collapse = "_"), ".png")),
+    pre_cal_combined,
+    width = 10, height = 4, dpi = 300
+  )
+  
+  # Apply calibration to test data
+  calibrated_probs <- probabilities
+  
+  for (ws in watersheds) {
+    # Extract probabilities for this watershed
+    ws_probs <- data.frame(prob = probabilities[, ws])
+    
+    # Apply calibration
+    cal_probs <- cal_apply(ws_probs, cal_estimators[[ws]])
+    
+    # Update calibrated probabilities
+    calibrated_probs[, ws] <- cal_probs$prob
+  }
+  
+  # Normalize calibrated probabilities to sum to 1
+  calibrated_probs <- calibrated_probs / rowSums(calibrated_probs)
+  
+  # Make predictions using calibrated probabilities
+  calibrated_preds <- apply(calibrated_probs, 1, function(row) {
+    levels(test_data$Watershed)[which.max(row)]
+  })
+  calibrated_preds <- factor(calibrated_preds, levels = levels(test_data$Watershed))
+  
+  # Evaluate calibrated model
+  calibrated_eval <- evaluate_model(calibrated_preds, test_data$Watershed, calibrated_probs)
+  
+  # Create post-calibration plots
+  post_cal_plots <- list()
+  
+  for (ws in watersheds) {
+    # Create binary target for this watershed
+    binary_results <- data.frame(
+      actual = test_data$Watershed == ws,
+      prob = calibrated_probs[, ws]
+    )
+    
+    # Create post-calibration plot
+    post_cal_plots[[ws]] <- cal_plot_windowed(
+      binary_results, truth = actual, estimate = prob, 
+      window_size = 0.2, step_size = 0.05
+    ) +
+      ggtitle(paste("Post-Calibration:", ws)) +
+      theme_minimal() +
+      coord_equal() +
+      theme(plot.title = element_text(size = 10))
+  }
+  
+  # Create combined post-calibration plot
+  post_cal_combined <- grid.arrange(
+    grobs = post_cal_plots,
+    ncol = length(watersheds),
+    top = paste("Post-Calibration Curves -",
+                data_type, "-", model_method, "-", paste(landmark_filter, collapse = "_"))
+  )
+  
+  # Save post-calibration plot
+  ggsave(
+    here(paste0("Figures/Calibration/Post_Calibration_", data_type, "_", 
+                model_method, "_", paste(landmark_filter, collapse = "_"), ".png")),
+    post_cal_combined,
+    width = 10, height = 4, dpi = 300
+  )
+  
+  # Create side-by-side comparison
+  comparison <- grid.arrange(
+    pre_cal_combined, post_cal_combined,
+    ncol = 1,
+    top = paste("Calibration Comparison -",
+                data_type, "-", model_method, "-", paste(landmark_filter, collapse = "_"))
+  )
+  
+  # Save comparison plot
+  ggsave(
+    here(paste0("Figures/Calibration/Comparison_", data_type, "_", 
+                model_method, "_", paste(landmark_filter, collapse = "_"), ".png")),
+    comparison,
+    width = 12, height = 8, dpi = 300
+  )
+  
+  # Calculate calibration metrics (Expected Calibration Error)
+  calc_ece <- function(actual, prob, bins = 10) {
+    # Create bins
+    bin_width <- 1 / bins
+    bin_indices <- floor(prob / bin_width) + 1
+    bin_indices[bin_indices > bins] <- bins
+    
+    # Calculate ECE
+    ece <- 0
+    bin_counts <- numeric(bins)
+    
+    for (bin in 1:bins) {
+      bin_mask <- bin_indices == bin
+      if (sum(bin_mask) > 0) {
+        bin_probs <- prob[bin_mask]
+        bin_actual <- actual[bin_mask]
+        bin_avg_prob <- mean(bin_probs)
+        bin_avg_actual <- mean(bin_actual)
+        bin_counts[bin] <- sum(bin_mask)
+        ece <- ece + (sum(bin_mask) / length(prob)) * abs(bin_avg_prob - bin_avg_actual)
+      }
+    }
+    
+    return(list(ece = ece, bin_counts = bin_counts))
+  }
+  
+  # Calculate ECE for pre and post calibration
+  pre_cal_ece <- sapply(watersheds, function(ws) {
+    calc_ece(test_data$Watershed == ws, probabilities[, ws])$ece
+  })
+  
+  post_cal_ece <- sapply(watersheds, function(ws) {
+    calc_ece(test_data$Watershed == ws, calibrated_probs[, ws])$ece
+  })
+  
+  # Create calibration metrics table
+  cal_metrics <- data.frame(
+    Watershed = watersheds,
+    Pre_Calibration_ECE = pre_cal_ece,
+    Post_Calibration_ECE = post_cal_ece,
+    Improvement = pre_cal_ece - post_cal_ece,
+    Percent_Improvement = (pre_cal_ece - post_cal_ece) / pre_cal_ece * 100
+  )
+  
+  # Add overall metrics
+  cal_metrics <- rbind(
+    cal_metrics,
+    data.frame(
+      Watershed = "Overall",
+      Pre_Calibration_ECE = mean(pre_cal_ece),
+      Post_Calibration_ECE = mean(post_cal_ece),
+      Improvement = mean(pre_cal_ece) - mean(post_cal_ece),
+      Percent_Improvement = (mean(pre_cal_ece) - mean(post_cal_ece)) / mean(pre_cal_ece) * 100
     )
   )
   
-  # Save the calibrated model
-  calibrated_model_file <- glue("Models/Calibrated/{model_method}_{data_type}_{landmark_str}_calibrated.rds")
-  saveRDS(calibrated_model, calibrated_model_file)
-  logger::log_info("Saved calibrated model to {calibrated_model_file}")
+  # Compare performance metrics
+  performance_comparison <- data.frame(
+    Metric = names(original_eval$metrics),
+    Original = unlist(original_eval$metrics),
+    Calibrated = unlist(calibrated_eval$metrics),
+    Difference = unlist(calibrated_eval$metrics) - unlist(original_eval$metrics),
+    Percent_Change = (unlist(calibrated_eval$metrics) - unlist(original_eval$metrics)) / 
+      unlist(original_eval$metrics) * 100
+  )
   
-  # Test the calibrated model on the test data
-  cal_predictions <- predict_calibrated(testdata)
+  # Save metrics
+  write.csv(
+    cal_metrics,
+    here(paste0("Data/Calibration_Results/ECE_", data_type, "_", 
+                model_method, "_", paste(landmark_filter, collapse = "_"), ".csv")),
+    row.names = FALSE
+  )
   
-  # Create results dataframe
-  results_df <- tibble(
-    Fish_id = test_metadata$Fish_id,
-    Actual = testdata$Watershed,
-    Predicted = cal_predictions$class,
-    Confidence = cal_predictions$confidence
-  ) %>%
+  write.csv(
+    performance_comparison,
+    here(paste0("Data/Calibration_Results/Performance_", data_type, "_", 
+                model_method, "_", paste(landmark_filter, collapse = "_"), ".csv")),
+    row.names = FALSE
+  )
+  
+  # Create confusion matrix comparison
+  conf_matrix_comparison <- data.frame(
+    Original = c(
+      paste("Accuracy:", round(original_eval$conf_matrix$overall["Accuracy"], 4)),
+      "Confusion Matrix:",
+      capture.output(print(original_eval$conf_matrix$table))
+    ),
+    Calibrated = c(
+      paste("Accuracy:", round(calibrated_eval$conf_matrix$overall["Accuracy"], 4)),
+      "Confusion Matrix:",
+      capture.output(print(calibrated_eval$conf_matrix$table))
+    )
+  )
+  
+  write.csv(
+    conf_matrix_comparison,
+    here(paste0("Data/Calibration_Results/ConfMatrix_", data_type, "_", 
+                model_method, "_", paste(landmark_filter, collapse = "_"), ".csv")),
+    row.names = FALSE
+  )
+  
+  # Create calibrated model object
+  calibrated_model <- list(
+    original_model = model,
+    cal_estimators = cal_estimators,
+    model_info = model_info,
+    cal_metrics = cal_metrics,
+    performance_comparison = performance_comparison,
+    
+    predict = function(newdata, type = "raw") {
+      # Get raw predictions from original model
+      if (type == "raw") {
+        # Get raw probabilities first
+        raw_probs <- predict(model, newdata, type = "prob")
+        
+        # Apply calibration
+        calibrated_probs <- raw_probs
+        
+        for (ws in names(cal_estimators)) {
+          # Extract raw probabilities for this watershed
+          ws_probs <- data.frame(prob = raw_probs[, ws])
+          
+          # Apply calibration
+          cal_probs <- cal_apply(ws_probs, cal_estimators[[ws]])
+          
+          # Replace with calibrated probabilities
+          calibrated_probs[, ws] <- cal_probs$prob
+        }
+        
+        # Normalize probabilities to sum to 1
+        calibrated_probs <- calibrated_probs / rowSums(calibrated_probs)
+        
+        # Return class with highest probability
+        predictions <- apply(calibrated_probs, 1, function(row) {
+          colnames(calibrated_probs)[which.max(row)]
+        })
+        
+        return(factor(predictions, levels = colnames(calibrated_probs)))
+      } else if (type == "prob") {
+        # Get raw probabilities
+        raw_probs <- predict(model, newdata, type = "prob")
+        
+        # Apply calibration to each watershed's probabilities
+        calibrated_probs <- raw_probs
+        
+        for (ws in names(cal_estimators)) {
+          # Extract raw probabilities for this watershed
+          ws_probs <- data.frame(prob = raw_probs[, ws])
+          
+          # Apply calibration
+          cal_probs <- cal_apply(ws_probs, cal_estimators[[ws]])
+          
+          # Replace with calibrated probabilities
+          calibrated_probs[, ws] <- cal_probs$prob
+        }
+        
+        # Normalize probabilities to sum to 1
+        row_sums <- rowSums(calibrated_probs)
+        calibrated_probs <- calibrated_probs / row_sums
+        
+        return(calibrated_probs)
+      } else {
+        stop("Invalid prediction type")
+      }
+    }
+  )
+  
+  # Save calibrated model
+  saveRDS(
+    calibrated_model,
+    here(paste0("Data/Calibrated_Models/Calibrated_", data_type, "_", 
+                model_method, "_", paste(landmark_filter, collapse = "_"), ".rds"))
+  )
+  
+  # Create performance visualization
+  perf_metrics <- performance_comparison %>%
+    filter(grepl("Accuracy|F1|Sensitivity|Specificity", Metric)) %>%
     mutate(
-      Correct = Predicted == Actual
-    ) %>%
-    bind_cols(as.data.frame(cal_predictions$calibrated_probabilities))
+      MetricType = case_when(
+        grepl("_", Metric) ~ strsplit(Metric, "_")[[1]][2],
+        TRUE ~ Metric
+      ),
+      Watershed = case_when(
+        grepl("_", Metric) ~ strsplit(Metric, "_")[[1]][1],
+        TRUE ~ "Overall"
+      )
+    )
   
-  # Calculate accuracy
-  accuracy <- mean(results_df$Correct)
-  logger::log_info("Calibrated model accuracy: {round(accuracy, 4)}")
+  perf_plot <- ggplot(perf_metrics, aes(x = Watershed, y = Percent_Change, fill = MetricType)) +
+    geom_bar(stat = "identity", position = "dodge") +
+    geom_hline(yintercept = 0, linetype = "dashed") +
+    theme_minimal() +
+    labs(
+      title = paste("Performance Change After Calibration -", 
+                    data_type, "-", model_method, "-", paste(landmark_filter, collapse = "_")),
+      x = "Watershed",
+      y = "Percent Change (%)",
+      fill = "Metric"
+    )
   
-  # Save prediction results
-  results_file <- glue("Model_Results/Calibration/{model_method}_{data_type}_{landmark_str}_cal_predictions.csv")
-  write.csv(results_df, results_file, row.names = FALSE)
+  ggsave(
+    here(paste0("Figures/Calibration/Performance_", data_type, "_", 
+                model_method, "_", paste(landmark_filter, collapse = "_"), ".png")),
+    perf_plot,
+    width = 10, height = 6, dpi = 300
+  )
   
   return(list(
-    metrics = all_metrics,
-    results = results_df,
-    model = calibrated_model
+    calibrated_model = calibrated_model,
+    pre_cal_plots = pre_cal_plots,
+    post_cal_plots = post_cal_plots,
+    cal_metrics = cal_metrics,
+    performance_comparison = performance_comparison,
+    original_eval = original_eval,
+    calibrated_eval = calibrated_eval
   ))
 }
 
-################################################################################
-# 2. Calibrate the top models
-################################################################################
-
-# Number of top models to calibrate
-num_top_models <- min(3, nrow(top_models))
-
-calibration_results <- list()
-
-for(i in 1:num_top_models) {
-  model_config <- top_models[i, ]
+# Function to process models from results file
+process_models_from_results <- function(results_file) {
+  # Read results
+  results <- read.csv(results_file)
   
-  data_type <- model_config$Data_Type
-  landmark_str <- model_config$Model_Landmarks
-  model_method <- model_config$Model_Method
+  # Get unique model configurations
+  model_configs <- results %>%
+    select(Data_Type, Model_Method, Landmark_Filter) %>%
+    distinct()
   
-  # Replace commas in landmark string with underscores for filename
-  landmark_str <- gsub(",", "_", landmark_str)
+  # Create summary dataframe for all models
+  all_perf_summary <- data.frame()
   
-  logger::log_info("Calibrating model #{i}: {model_method} using {data_type} data with landmarks {landmark_str}")
-  
-  result <- calibrate_model(data_type, landmark_str, model_method)
-  
-  if(!is.null(result)) {
-    calibration_results[[i]] <- result
-  }
-}
-
-################################################################################
-# 3. Create summary of calibration results
-################################################################################
-
-if(length(calibration_results) > 0) {
-  # Combine metrics from all models
-  all_cal_metrics <- bind_rows(
-    lapply(calibration_results, function(x) {
-      x$metrics %>%
-        mutate(
-          Model = glue("{x$model$model_info$model_method} ({x$model$model_info$data_type}, {x$model$model_info$landmark_str})")
-        )
+  # Process each model
+  for (i in 1:nrow(model_configs)) {
+    tryCatch({
+      row <- model_configs[i, ]
+      
+      cat("Calibrating model:", row$Data_Type, "-", row$Model_Method, "-", row$Landmark_Filter, "\n")
+      
+      # Calibrate model
+      cal_results <- calibrate_model(
+        row$Data_Type, 
+        row$Model_Method, 
+        strsplit(row$Landmark_Filter, "_")[[1]]
+      )
+      
+      # Add to summary
+      model_summary <- data.frame(
+        Data_Type = row$Data_Type,
+        Model_Method = row$Model_Method,
+        Landmark_Filter = row$Landmark_Filter,
+        Original_Accuracy = cal_results$original_eval$metrics$Accuracy,
+        Calibrated_Accuracy = cal_results$calibrated_eval$metrics$Accuracy,
+        Original_LogLoss = cal_results$original_eval$metrics$LogLoss,
+        Calibrated_LogLoss = cal_results$calibrated_eval$metrics$LogLoss,
+        Original_BrierScore = cal_results$original_eval$metrics$BrierScore,
+        Calibrated_BrierScore = cal_results$calibrated_eval$metrics$BrierScore,
+        Mean_ECE_Before = mean(cal_results$cal_metrics$Pre_Calibration_ECE[
+          cal_results$cal_metrics$Watershed != "Overall"]),
+        Mean_ECE_After = mean(cal_results$cal_metrics$Post_Calibration_ECE[
+          cal_results$cal_metrics$Watershed != "Overall"]),
+        ECE_Improvement_Percent = mean(cal_results$cal_metrics$Percent_Improvement[
+          cal_results$cal_metrics$Watershed != "Overall"])
+      )
+      
+      all_perf_summary <- rbind(all_perf_summary, model_summary)
+      
+      cat("  Completed calibration\n")
+    }, error = function(e) {
+      cat("Error calibrating model:", row$Data_Type, "-", row$Model_Method, "-", row$Landmark_Filter, "\n")
+      cat("  ", conditionMessage(e), "\n")
     })
+  }
+  
+  # Save overall summary
+  write.csv(
+    all_perf_summary,
+    here("Data/Calibration_Results/All_Models_Calibration_Summary.csv"),
+    row.names = FALSE
   )
   
-  # Save combined metrics
-  write.csv(all_cal_metrics, "Model_Results/Calibration/All_Calibration_Metrics.csv", row.names = FALSE)
-  
   # Create summary visualization
-  cal_summary_plot <- ggplot(all_cal_metrics, 
-                             aes(x = Watershed, y = Brier_Improvement, fill = Model)) +
-    geom_bar(stat = "identity", position = "dodge") +
-    labs(
-      title = "Probability Calibration Improvement",
-      subtitle = "Percent reduction in Brier score (higher is better)",
-      x = "Watershed",
-      y = "Brier Score Improvement (%)"
-    ) +
-    theme_minimal() +
-    theme(
-      axis.text.x = element_text(angle = 45, hjust = 1),
-      legend.position = "bottom"
+  if (nrow(all_perf_summary) > 0) {
+    # ECE improvement plot
+    ece_plot <- ggplot(all_perf_summary, 
+                       aes(x = paste(Data_Type, Landmark_Filter, sep = "_"), 
+                           y = ECE_Improvement_Percent, 
+                           fill = Model_Method)) +
+      geom_bar(stat = "identity", position = "dodge") +
+      theme_minimal() +
+      theme(axis.text.x = element_text(angle = 45, hjust = 1)) +
+      labs(
+        title = "ECE Improvement After Calibration",
+        x = "Model Configuration",
+        y = "ECE Improvement (%)",
+        fill = "Model Method"
+      )
+    
+    # Brier score improvement plot
+    brier_improvement <- (all_perf_summary$Original_BrierScore - 
+                            all_perf_summary$Calibrated_BrierScore) / 
+      all_perf_summary$Original_BrierScore * 100
+    
+    brier_plot <- ggplot(all_perf_summary, 
+                         aes(x = paste(Data_Type, Landmark_Filter, sep = "_"), 
+                             y = brier_improvement, 
+                             fill = Model_Method)) +
+      geom_bar(stat = "identity", position = "dodge") +
+      theme_minimal() +
+      theme(axis.text.x = element_text(angle = 45, hjust = 1)) +
+      labs(
+        title = "Brier Score Improvement After Calibration",
+        x = "Model Configuration",
+        y = "Brier Score Improvement (%)",
+        fill = "Model Method"
+      )
+    
+    # Combine plots
+    combined_summary <- grid.arrange(
+      ece_plot, brier_plot,
+      ncol = 1,
+      top = "Calibration Effects Across All Models"
     )
-  
-  ggsave("Figures/Calibration/Calibration_Improvement_Summary.png", 
-         cal_summary_plot, width = 10, height = 6, dpi = 300)
-  
-  logger::log_info("Model calibration completed successfully")
-  logger::log_info("Summary saved to Model_Results/Calibration/All_Calibration_Metrics.csv")
-}
-
-################################################################################
-# 4. Example of how to use the calibrated model for prediction
-################################################################################
-
-# Example of how to load and use a calibrated model
-example_usage <- function() {
-  logger::log_info("Example: Loading and using a calibrated model")
-  
-  # Select the first calibrated model
-  model_config <- top_models[1, ]
-  data_type <- model_config$Data_Type
-  landmark_str <- gsub(",", "_", model_config$Model_Landmarks)
-  model_method <- model_config$Model_Method
-  
-  # Load the calibrated model
-  cal_model_file <- glue("Models/Calibrated/{model_method}_{data_type}_{landmark_str}_calibrated.rds")
-  
-  if(file.exists(cal_model_file)) {
-    cal_model <- readRDS(cal_model_file)
-    logger::log_info("Loaded calibrated model from {cal_model_file}")
     
-    # Load sample data for prediction (using test data as an example)
-    train_test_file <- glue("Data/Train_Test_Sets/{data_type}_{landmark_str}_train_test_data.rds")
-    train_test_data <- readRDS(train_test_file)
-    
-    # Take a small sample for demonstration
-    sample_data <- train_test_data$test[1:5, ]
-    
-    # Make predictions using the calibrated model
-    predictions <- cal_model$predict(sample_data)
-    
-    # Display the results
-    results <- tibble(
-      Actual = sample_data$Watershed,
-      Predicted = predictions$class,
-      Confidence = predictions$confidence
-    ) %>%
-      mutate(
-        Correct = Predicted == Actual
-      ) %>%
-      bind_cols(as.data.frame(predictions$calibrated_probabilities))
-    
-    print(results)
-    
-    # Output to a markdown file for documentation
-    sink("Model_Results/Calibration/Example_Usage.md")
-    
-    cat("# Example Usage of Calibrated Model\n\n")
-    cat("## Model Information\n\n")
-    cat("- Data Type:", cal_model$model_info$data_type, "\n")
-    cat("- Landmarks:", cal_model$model_info$landmark_str, "\n")
-    cat("- Model Method:", cal_model$model_info$model_method, "\n\n")
-    
-    cat("## Prediction Example\n\n")
-    cat("Input data: First 5 samples from test set\n\n")
-    
-    cat("### Prediction Results\n\n")
-    print(results)
-    
-    cat("\n\n## How to Use the Calibrated Model\n\n")
-    cat("```r\n")
-    cat("# Load the calibrated model\n")
-    cat("cal_model <- readRDS(\"", cal_model_file, "\")\n\n")
-    cat("# Make predictions on new data\n")
-    cat("predictions <- cal_model$predict(new_data)\n\n")
-    cat("# Results will include:\n")
-    cat("# - class: Predicted class labels\n")
-    cat("# - calibrated_probabilities: Calibrated probability for each class\n")
-    cat("# - confidence: Highest calibrated probability (confidence score)\n")
-    cat("```\n")
-    
-    sink()
-    
-    logger::log_info("Example usage documentation saved to Model_Results/Calibration/Example_Usage.md")
-  } else {
-    logger::log_error("Calibrated model file not found: {cal_model_file}")
+    ggsave(
+      here("Figures/Calibration/All_Models_Calibration_Summary.png"),
+      combined_summary,
+      width = 12, height = 8, dpi = 300
+    )
   }
+  
+  return(all_perf_summary)
 }
 
-# Run the example usage function
-example_usage()
+# Main execution
+cat("Starting model probability calibration...\n")
+
+# Process models from results file
+all_perf_summary <- process_models_from_results(here("Data/Model_Results/ALL_Models_Results.csv"))
+
+cat("Model probability calibration completed!\n")
+cat("Calibrated models saved to: Data/Calibrated_Models/\n")
+cat("Calibration plots saved to: Figures/Calibration/\n")
+cat("Calibration and performance metrics saved to: Data/Calibration_Results/\n")
+cat("Overall calibration summary saved to: Data/Calibration_Results/All_Models_Calibration_Summary.csv\n")
+
