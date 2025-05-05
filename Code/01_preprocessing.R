@@ -1,436 +1,245 @@
-# 03a_timeseries_modeling.R
-# Unified training of time series models using tidymodels framework
+# 01_preprocessing.R
+# Standardized preprocessing for laser ablation time series data
+# Always processes Core and Fw landmarks
 
 library(tidyverse)
-library(tidymodels)
 library(here)
+library(mgcv)
+library(zoo)
+library(progress)
 
-# Configuration
-config <- list(
-  data_sources = c("GAM", "MA", "RAW", "Sr88", "Combined"), # Time series data types
-  model_types = c("rf", "svm", "knn"),
-  test_prop = 0.2,
-  cv_folds = 5,
-  random_seed = 123
-)
+# Fixed configuration
+window_size <- 60  # For moving average
+gamma_value <- 0.8  # For GAM smoothing
+landmarks <- c("Core", "Fw")  # Always use both landmarks
 
-# Load all preprocessed time series data
-load_ts_data <- function() {
-  # Time series data
-  data_files <- list.files(here("data/preprocessed_matrices"), 
-                           pattern = "^preprocessed_.+\\.csv$", 
-                           full.names = TRUE)
-  
-  # Read all data files
-  all_data <- list()
-  
-  for (file in data_files) {
-    file_name <- basename(file)
-    data_type <- gsub("preprocessed_(.+)\\.csv", "\\1", file_name)
-    
-    message(paste("Loading", data_type, "data..."))
-    all_data[[data_type]] <- read_csv(file)
-  }
-  
-  return(all_data)
-}
-
-# Create train/test split for time series data
-create_ts_split <- function(all_data, config) {
-  # Set seed for reproducibility
-  set.seed(config$random_seed)
-  
-  # Get Fish_id from each dataset
-  fish_ids <- lapply(all_data, function(data) data$Fish_id)
-  
-  # Find common Fish_ids across all datasets
-  common_fish_ids <- Reduce(intersect, fish_ids)
-  
-  message(paste("Found", length(common_fish_ids), "common Fish_ids across datasets"))
-  
-  # Sample test set indices
-  test_indices <- sample(length(common_fish_ids), size = floor(length(common_fish_ids) * config$test_prop))
-  test_fish_ids <- common_fish_ids[test_indices]
-  
-  # Split each dataset using the same Fish_ids
-  split_data <- list()
-  
-  for (data_type in names(all_data)) {
-    data <- all_data[[data_type]]
-    
-    # Split data
-    train_data <- data %>% filter(!Fish_id %in% test_fish_ids)
-    test_data <- data %>% filter(Fish_id %in% test_fish_ids)
-    
-    split_data[[data_type]] <- list(
-      train = train_data,
-      test = test_data
-    )
-    
-    message(paste("  ", data_type, "split:", nrow(train_data), "training samples,", 
-                  nrow(test_data), "testing samples"))
-  }
-  
-  # Save split
-  saveRDS(split_data, here("data/ts_split_data.rds"))
-  
-  # Also save a list of train/test Fish_ids for consistency with shape analysis
-  saveRDS(
-    list(train_ids = setdiff(common_fish_ids, test_fish_ids),
-         test_ids = test_fish_ids),
-    here("data/fish_id_split.rds")
+# Function to process otolith data
+process_otolith_data <- function() {
+  # List all landmark files
+  landmark_files <- list.files(
+    here("data/processed/landmarks"),
+    pattern = "*.csv", 
+    full.names = TRUE
   )
   
-  return(split_data)
-}
-
-# Train models for each time series data source using tidymodels
-train_ts_models <- function(split_data, config) {
-  # Initialize results storage
-  all_models <- list()
-  all_metrics <- list()
-  all_workflows <- list()
+  # Initialize progress bar
+  pb <- progress_bar$new(
+    format = "Processing [:bar] :percent (:eta remaining)",
+    total = length(landmark_files),
+    clear = FALSE,
+    width = 60
+  )
   
-  # Train models for each data source
-  for (data_source in names(split_data)) {
-    # Get train and test data
-    train_data <- split_data[[data_source]]$train
-    test_data <- split_data[[data_source]]$test
-    
-    # Ensure Watershed is a factor
-    train_data$Watershed <- as.factor(train_data$Watershed)
-    test_data$Watershed <- as.factor(test_data$Watershed)
-    
-    # Define the recipe for preprocessing
-    recipe_spec <- recipe(Watershed ~ ., data = train_data) %>%
-      update_role(Fish_id, new_role = "ID") %>%
-      update_role(Year, Natal_Iso, new_role = "ID") %>%
-      step_normalize(all_predictors(), -all_nominal(), -has_role("ID"))
-    
-    # Create cross validation folds from training data
-    set.seed(config$random_seed)
-    cv_folds <- vfold_cv(
-      train_data,
-      v = config$cv_folds,
-      strata = Watershed
-    )
-    
-    # Train models for each model type
-    for (model_type in config$model_types) {
-      # Create model ID
-      model_id <- paste(data_source, model_type, sep = "_")
-      message(paste("Training model:", model_id))
+  # Calculate adaptive interpolation points
+  valid_counts <- numeric()
+  
+  for (file in landmark_files) {
+    tryCatch({
+      ind_data <- read.csv(file)
       
-      # Define model specification based on model_type
-      if (model_type == "rf") {
-        model_spec <- rand_forest() %>%
-          set_engine("ranger", importance = "impurity") %>%
-          set_mode("classification")
-      } else if (model_type == "svm") {
-        model_spec <- svm_rbf() %>%
-          set_engine("kernlab") %>%
-          set_mode("classification")
-      } else if (model_type == "knn") {
-        model_spec <- nearest_neighbor() %>%
-          set_engine("kknn") %>%
-          set_mode("classification")
-      } else {
-        message(paste("Unknown model type:", model_type))
+      # Skip if file doesn't contain required landmarks
+      if (!all(landmarks %in% unique(ind_data$Landmark))) {
         next
       }
       
-      # Create the workflow
-      workflow_spec <- workflow() %>%
-        add_recipe(recipe_spec) %>%
-        add_model(model_spec)
+      # Get filtered data extent
+      fw_indices <- which(ind_data$Landmark == "Fw")
+      if (length(fw_indices) == 0) next
       
-      # Train the model with cross-validation
-      cv_results <- workflow_spec %>%
-        fit_resamples(
-          resamples = cv_folds,
-          metrics = metric_set(accuracy, roc_auc, sensitivity, specificity),
-          control = control_resamples(save_pred = TRUE)
-        )
+      fw_max_microns <- max(ind_data$Microns[fw_indices], na.rm = TRUE)
       
-      # Collect CV metrics
-      cv_metrics <- collect_metrics(cv_results)
+      ind_data_filtered <- ind_data %>% 
+        filter(Landmark %in% landmarks | 
+                 (Microns > fw_max_microns & Microns <= fw_max_microns + 300))
       
-      # Fit the final model on all training data
-      final_fit <- workflow_spec %>%
-        fit(data = train_data)
+      # Only count if we have enough data points
+      if (nrow(ind_data_filtered) >= 10) {
+        valid_counts <- c(valid_counts, nrow(ind_data_filtered))
+      }
+    }, error = function(e) {
+      # Skip files with errors
+    })
+  }
+  
+  # Calculate the average number of data points (with a fallback)
+  if (length(valid_counts) > 0) {
+    interp_points <- round(mean(valid_counts, na.rm = TRUE))
+  } else {
+    interp_points <- 1000  # Fallback if no valid counts
+    warning("Could not calculate average data points, using default of 1000")
+  }
+  
+  message(paste("Using", interp_points, "interpolation points"))
+  
+  # Initialize results list
+  results_list <- list()
+  
+  # Process each file
+  for (file in landmark_files) {
+    pb$tick()
+    
+    tryCatch({
+      # Read file data
+      ind_data <- read.csv(file)
       
-      # Make predictions on test data
-      predictions <- predict(final_fit, test_data)
-      class_preds <- predictions$.pred_class
+      # Extract metadata
+      watershed <- ind_data$Watershed[1]
+      natal_iso <- ind_data$natal_origin_iso[1]
+      fish_id <- ind_data$Fish_id[1]
+      year <- ind_data$Year[1]
       
-      # Get probability predictions
-      prob_predictions <- predict(final_fit, test_data, type = "prob")
-      
-      # Combine results
-      results_df <- test_data %>%
-        select(Fish_id, Watershed) %>%
-        bind_cols(
-          predict(final_fit, test_data),
-          predict(final_fit, test_data, type = "prob")
-        ) %>%
-        mutate(
-          correct = Watershed == .pred_class
-        )
-      
-      # Calculate confusion matrix
-      conf_mat_obj <- conf_mat(results_df, truth = Watershed, estimate = .pred_class)
-      
-      # Calculate accuracy
-      acc <- accuracy_vec(truth = results_df$Watershed, estimate = results_df$.pred_class)
-      
-      # Calculate metrics for each class
-      class_metrics <- data.frame()
-      
-      for (cls in levels(results_df$Watershed)) {
-        # Create binary version
-        binary_results <- results_df %>%
-          mutate(
-            binary_truth = factor(ifelse(Watershed == cls, "yes", "no"), levels = c("yes", "no")),
-            binary_pred = factor(ifelse(.pred_class == cls, "yes", "no"), levels = c("yes", "no"))
-          )
-        
-        # Calculate metrics
-        sens <- sensitivity(binary_results, truth = binary_truth, estimate = binary_pred)
-        spec <- specificity(binary_results, truth = binary_truth, estimate = binary_pred)
-        prec <- precision(binary_results, truth = binary_truth, estimate = binary_pred)
-        
-        # F1 score
-        f1 <- (2 * sens * prec) / (sens + prec)
-        
-        # Add to dataframe
-        class_metrics <- rbind(class_metrics, data.frame(
-          Class = cls,
-          Sensitivity = sens$.estimate,
-          Specificity = spec$.estimate,
-          Precision = prec$.estimate,
-          F1 = f1
-        ))
+      # Skip if missing landmark
+      if (!all(landmarks %in% unique(ind_data$Landmark))) {
+        next
       }
       
-      # Store results
-      all_models[[model_id]] <- final_fit
-      all_workflows[[model_id]] <- workflow_spec
-      all_metrics[[model_id]] <- list(
-        cv_results = cv_results,
-        cv_metrics = cv_metrics,
-        final_accuracy = acc,
-        conf_mat = conf_mat_obj,
-        class_metrics = class_metrics,
-        predictions = results_df,
-        model_info = list(
-          data_source = data_source,
-          model_type = model_type
-        )
+      # Filter data by landmarks
+      fw_max_microns <- ind_data %>% 
+        filter(Landmark == "Fw") %>% 
+        summarise(max_microns = max(Microns, na.rm = TRUE)) %>% 
+        pull(max_microns)
+      
+      ind_data_filtered <- ind_data %>% 
+        filter(Landmark %in% landmarks | 
+                 (Microns > fw_max_microns & Microns <= fw_max_microns + 300))
+      
+      # Process SR8786 (Iso)
+      # Raw interpolation
+      raw_iso <- approx(
+        seq_len(nrow(ind_data_filtered)),
+        ind_data_filtered$Iso,
+        seq(1, nrow(ind_data_filtered), length.out = interp_points),
+        method = "linear", rule = 2
+      )$y
+      
+      # Moving average
+      ma_iso <- rollapply(ind_data_filtered$Iso, width = window_size, 
+                          FUN = mean, align = "center", fill = NA)
+      
+      ma_iso_interp <- approx(
+        seq_len(length(ma_iso)),
+        ma_iso,
+        seq(1, length(ma_iso), length.out = interp_points),
+        method = "linear", rule = 2
+      )$y
+      
+      # GAM smoothing
+      valid_idx <- !is.na(ind_data_filtered$Iso)
+      df <- data.frame(
+        Microns = which(valid_idx), 
+        Iso = ind_data_filtered$Iso[valid_idx]
       )
       
-      message(paste("  Accuracy:", round(acc, 4)))
-    }
+      k <- min(50, floor(15 * (nrow(df)^(2/9))))
+      model <- gam(Iso ~ s(Microns, bs = "tp", k = k), 
+                   gamma = gamma_value, data = df)
+      
+      gam_iso <- predict(model, newdata = data.frame(
+        Microns = seq_len(nrow(ind_data_filtered))))
+      
+      gam_iso_interp <- approx(
+        seq_len(length(gam_iso)),
+        gam_iso,
+        seq(1, length(gam_iso), length.out = interp_points),
+        method = "linear", rule = 2
+      )$y
+      
+      # Process Sr88 section
+      # Find the last FW landmark index
+      last_fw_idx <- which(ind_data_filtered$Landmark == "Fw")
+      if(length(last_fw_idx) > 0) {
+        last_fw_idx <- max(last_fw_idx)
+        
+        # Get the Sr88 value at the last FW landmark
+        sr88_last_fw <- ind_data_filtered$Sr88[last_fw_idx]
+        
+        # Find the minimum Sr88 value before the last FW landmark
+        min_sr88 <- min(ind_data_filtered$Sr88[1:last_fw_idx], na.rm = TRUE)
+        
+        # Normalize Sr88
+        norm_sr88 <- (ind_data_filtered$Sr88 - min_sr88) / (sr88_last_fw - min_sr88)
+      } else {
+        # Fallback if no FW landmark exists
+        message("Warning: No Fw landmark found in file for fish_id: ", fish_id)
+        norm_sr88 <- rep(NA, length(ind_data_filtered$Sr88))
+      }
+      
+      # Interpolate normalized Sr88
+      sr88_interp <- approx(
+        seq_len(length(norm_sr88)),
+        norm_sr88,
+        seq(1, length(norm_sr88), length.out = interp_points),
+        method = "linear", rule = 2
+      )$y
+      
+      # Create combined feature set (GAM Sr8786 + Sr88)
+      combined_interp <- c(gam_iso_interp, sr88_interp)
+      
+      # Store results
+      results_list[[length(results_list) + 1]] <- list(
+        Fish_id = fish_id,
+        Watershed = watershed,
+        Natal_Iso = natal_iso,
+        Year = year,
+        
+        # Results by type
+        Raw = raw_iso,
+        GAM_Smoothed = gam_iso_interp,
+        Moving_Avg = ma_iso_interp,
+        Sr88 = sr88_interp, 
+        Combined = combined_interp
+      )
+      
+    }, error = function(e) {
+      message("Error processing file: ", file, " - ", e$message)
+    })
   }
   
-  # Save models, workflows, and metrics
-  saveRDS(all_models, here("data/models/ts_models.rds"))
-  saveRDS(all_workflows, here("data/models/ts_workflows.rds"))
-  saveRDS(all_metrics, here("data/results/ts_metrics.rds"))
-  
-  # Create summary metrics data frame
-  summary_metrics <- map_dfr(names(all_metrics), function(model_id) {
-    metrics <- all_metrics[[model_id]]
-    tibble(
-      Model_ID = model_id,
-      Data_Source = metrics$model_info$data_source,
-      Model_Type = metrics$model_info$model_type,
-      Accuracy = metrics$final_accuracy
-    )
-  })
-  
-  # Save summary metrics
-  write_csv(summary_metrics, here("data/results/ts_summary_metrics.csv"))
-  
-  # Create detailed metrics with class-specific performance
-  detailed_metrics <- map_dfr(names(all_metrics), function(model_id) {
-    metrics <- all_metrics[[model_id]]
-    
-    metrics$class_metrics %>%
-      mutate(
-        Model_ID = model_id,
-        Data_Source = metrics$model_info$data_source,
-        Model_Type = metrics$model_info$model_type
-      )
-  })
-  
-  # Save detailed metrics
-  write_csv(detailed_metrics, here("data/results/ts_detailed_metrics.csv"))
-  
-  # Create model visualizations
-  create_model_visualizations(all_metrics)
-  
-  return(list(
-    models = all_models,
-    workflows = all_workflows,
-    metrics = all_metrics
-  ))
-}
-
-# Create model performance visualizations
-create_model_visualizations <- function(all_metrics) {
-  # Create figures directory if it doesn't exist
-  dir.create(here("figures/models"), recursive = TRUE, showWarnings = FALSE)
-  
-  # Extract summary metrics
-  summary_metrics <- map_dfr(names(all_metrics), function(model_id) {
-    metrics <- all_metrics[[model_id]]
-    tibble(
-      Model_ID = model_id,
-      Data_Source = metrics$model_info$data_source,
-      Model_Type = metrics$model_info$model_type,
-      Accuracy = metrics$final_accuracy
-    )
-  })
-  
-  # 1. Overall accuracy comparison
-  p1 <- ggplot(summary_metrics, aes(x = reorder(Model_ID, Accuracy), y = Accuracy, fill = Data_Source)) +
-    geom_bar(stat = "identity") +
-    geom_text(aes(label = sprintf("%.3f", Accuracy)), hjust = -0.1, size = 3) +
-    coord_flip() +
-    labs(
-      title = "Model Accuracy Comparison",
-      x = NULL,
-      y = "Accuracy",
-      fill = "Data Source"
-    ) +
-    theme_minimal() +
-    theme(
-      legend.position = "bottom",
-      plot.title = element_text(hjust = 0.5)
-    )
-  
-  ggsave(
-    here("figures/models/ts_accuracy_comparison.png"),
-    p1,
-    width = 10,
-    height = 8,
-    dpi = 300
+  # Combine results for output
+  metadata <- data.frame(
+    Fish_id = sapply(results_list, `[[`, "Fish_id"),
+    Watershed = sapply(results_list, `[[`, "Watershed"),
+    Natal_Iso = sapply(results_list, `[[`, "Natal_Iso"),
+    Year = sapply(results_list, `[[`, "Year")
   )
   
-  # 2. Accuracy by data source and model type
-  p2 <- ggplot(summary_metrics, aes(x = Data_Source, y = Accuracy, fill = Model_Type)) +
-    geom_bar(stat = "identity", position = "dodge") +
-    geom_text(aes(label = sprintf("%.3f", Accuracy)), 
-              position = position_dodge(width = 0.9), 
-              vjust = -0.5, size = 3) +
-    labs(
-      title = "Model Accuracy by Data Source and Model Type",
-      x = "Data Source",
-      y = "Accuracy",
-      fill = "Model Type"
-    ) +
-    theme_minimal() +
-    theme(
-      legend.position = "bottom",
-      plot.title = element_text(hjust = 0.5)
-    )
+  # Create data matrices
+  raw_df <- do.call(rbind, lapply(results_list, `[[`, "Raw"))
+  gam_df <- do.call(rbind, lapply(results_list, `[[`, "GAM_Smoothed"))
+  ma_df <- do.call(rbind, lapply(results_list, `[[`, "Moving_Avg"))
+  sr88_df <- do.call(rbind, lapply(results_list, `[[`, "Sr88"))
+  combined_df <- do.call(rbind, lapply(results_list, `[[`, "Combined"))
   
-  ggsave(
-    here("figures/models/ts_accuracy_by_source_and_type.png"),
-    p2,
-    width = 10,
-    height = 6,
-    dpi = 300
-  )
+  # Add column names to data matrices
+  colnames(raw_df) <- paste0("X", 1:ncol(raw_df))
+  colnames(gam_df) <- paste0("X", 1:ncol(gam_df))
+  colnames(ma_df) <- paste0("X", 1:ncol(ma_df))
+  colnames(sr88_df) <- paste0("X", 1:ncol(sr88_df))
+  colnames(combined_df) <- paste0("X", 1:ncol(combined_df))
   
-  # 3. Extract class-specific metrics
-  class_metrics <- map_dfr(names(all_metrics), function(model_id) {
-    # Extract metrics
-    metrics <- all_metrics[[model_id]]
-    
-    # Add model info
-    metrics$class_metrics %>%
-      mutate(
-        Model_ID = model_id,
-        Data_Source = metrics$model_info$data_source,
-        Model_Type = metrics$model_info$model_type
-      )
-  })
+  # Combine metadata with data matrices
+  all_data_raw <- cbind(metadata, raw_df)
+  all_data_gam <- cbind(metadata, gam_df)
+  all_data_ma <- cbind(metadata, ma_df)
+  all_data_sr88 <- cbind(metadata, sr88_df)
+  all_data_combined <- cbind(metadata, combined_df)
   
-  # Create F1 score heatmap
-  p3 <- class_metrics %>%
-    ggplot(aes(x = Class, y = Model_ID, fill = F1)) +
-    geom_tile(color = "white", size = 0.2) +
-    geom_text(aes(label = sprintf("%.2f", F1)), color = "white", size = 3) +
-    scale_fill_viridis_c(option = "plasma", limits = c(0, 1)) +
-    labs(
-      title = "F1 Scores by Model and Watershed Class",
-      x = "Watershed",
-      y = "Model",
-      fill = "F1 Score"
-    ) +
-    theme_minimal() +
-    theme(
-      axis.text.y = element_text(hjust = 1),
-      legend.position = "right",
-      plot.title = element_text(hjust = 0.5),
-      axis.text.x = element_text(angle = 45, hjust = 1)
-    )
+  # Save to files
+  output_dir <- here("data/preprocessed_matrices")
   
-  ggsave(
-    here("figures/models/ts_f1_heatmap.png"),
-    p3,
-    width = 12,
-    height = 10,
-    dpi = 300
-  )
-  
-  # 4. Create individual confusion matrices
-  for (model_id in names(all_metrics)) {
-    # Get confusion matrix
-    conf_mat_obj <- all_metrics[[model_id]]$conf_mat
-    
-    # Create plot using autoplot
-    p <- autoplot(conf_mat_obj, type = "heatmap") +
-      labs(title = paste("Confusion Matrix -", model_id)) +
-      theme_minimal() +
-      theme(
-        plot.title = element_text(hjust = 0.5)
-      )
-    
-    ggsave(
-      here(paste0("figures/models/ts_confmat_", model_id, ".png")),
-      p,
-      width = 8,
-      height = 6,
-      dpi = 300
-    )
-  }
-}
-
-# Main execution
-main <- function() {
-  # Load all time series data
-  message("Loading time series data...")
-  ts_data <- load_ts_data()
-  
-  # Check for existing train/test split
-  split_file <- here("data/ts_split_data.rds")
-  if (file.exists(split_file)) {
-    message("Loading existing train/test split...")
-    split_data <- readRDS(split_file)
-  } else {
-    message("Creating new train/test split...")
-    split_data <- create_ts_split(ts_data, config)
+  if (!dir.exists(output_dir)) {
+    dir.create(output_dir, recursive = TRUE)
   }
   
-  # Train models
-  message("Training time series models...")
-  model_results <- train_ts_models(split_data, config)
+  write.csv(all_data_raw, file = file.path(output_dir, "preprocessed_RAW.csv"), row.names = FALSE)
+  write.csv(all_data_gam, file = file.path(output_dir, "preprocessed_GAM.csv"), row.names = FALSE)
+  write.csv(all_data_ma, file = file.path(output_dir, "preprocessed_MA.csv"), row.names = FALSE)
+  write.csv(all_data_sr88, file = file.path(output_dir, "preprocessed_Sr88.csv"), row.names = FALSE)
+  write.csv(all_data_combined, file = file.path(output_dir, "preprocessed_Combined.csv"), row.names = FALSE)
   
-  message("Time series modeling completed successfully!")
-  return(model_results)
+  message("Processed data saved to: ", output_dir)
+  return(invisible(results_list))
 }
 
-# Run the main function
-ts_model_results <- main()
+# Run the preprocessing
+process_otolith_data()
