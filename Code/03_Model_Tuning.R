@@ -65,5 +65,6 @@ metrics<- calibrated_predictions %>%
   cal_validate_multinomial(Watershed)%>%
   collect_metrics()
 
+metrics
 
 
