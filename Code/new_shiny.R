@@ -1,5 +1,3 @@
-# app.R - Enhanced PCA and Model Performance Viewer
-# Adds model performance visualization to the existing PCA analysis app
 
 library(shiny)
 library(tidyverse)
@@ -83,9 +81,6 @@ ui <- fluidPage(
                  plotOutput("timeseriesPlot", height = "300px"),
                  verbatimTextOutput("fishInfo")
         ),
-        tabPanel("Variance Explained",
-                 plotOutput("variancePlot", height = "400px")
-        ),
         tabPanel("Model Performance", 
                  h4("Classification Performance by Watershed and Model Type"),
                  plotOutput("modelPerformanceHeatmap", height = "500px"),
@@ -106,6 +101,7 @@ ui <- fluidPage(
   )
 )
 
+
 # Server
 server <- function(input, output, session) {
   
@@ -119,79 +115,90 @@ server <- function(input, output, session) {
   # Reactive value for zoom regions
   zoom_region <- reactiveValues(x = NULL, y = NULL)
   
-  # Load model results on startup
+  # Load time series summary metrics
   observe({
-    # Try to find model results file
-    model_patterns <- c(
-      "ALL_Models_Results\\.csv$",
-      "all_metrics_comparison\\.csv$", 
-      "model_performance.*\\.csv$"
+    # Try to find ts_summary_metrics.csv
+    ts_metrics_patterns <- c(
+      "ts_summary_metrics\\.csv$",
+      "summary_metrics\\.csv$"
     )
     
-    model_path <- find_file(model_patterns)
+    ts_metrics_path <- find_file(ts_metrics_patterns)
     
-    if (!is.null(model_path)) {
-      # Load the data safely
+    if (!is.null(ts_metrics_path)) {
+      # Load the data 
       tryCatch({
-        model_data <- read.csv(model_path)
+        metrics_data <- read.csv(ts_metrics_path)
         
-        # Validate the data has required columns
-        required_cols <- c("Data_Type", "Model_Method", "Watershed")
-        metric_cols <- c("Accuracy", "F1_Score", "Specificity", "Precision")
+        # Process the data to match the expected format
+        processed_data <- metrics_data %>%
+          rename(
+            Data_Type = Data_Source,
+            Model_Method = Model_Type
+          ) %>%
+          mutate(
+            Watershed = "Overall",
+            F1_Score = Accuracy,
+            Specificity = Accuracy,
+            Precision = Accuracy,
+            Balanced_Accuracy = Accuracy
+          )
         
-        # Check if the file has at least the minimum required structure
-        if (all(required_cols %in% names(model_data)) && 
-            any(metric_cols %in% names(model_data))) {
-          model_results(model_data)
-        } else {
-          # Missing required columns, use mock data
-          create_mock_model_data()
-        }
+        # Set as model results
+        model_results(processed_data)
+        
       }, error = function(e) {
-        # Error reading file, use mock data
-        message("Error reading model results: ", e$message)
+        message("Error reading ts_metrics file: ", e$message)
+        # Create mock data if file can't be read
         create_mock_model_data()
       })
     } else {
-      # File not found, use mock data
-      message("Model results file not found. Using mock data.")
+      message("Could not find ts_summary_metrics.csv")
+      # Create mock data if file not found
       create_mock_model_data()
     }
-    
-    # Try to find ensemble results file
-    ensemble_patterns <- c(
-      "ensemble_predictions\\.csv$",
-      "ensemble_results.*\\.csv$"
-    )
-    
-    ensemble_path <- find_file(ensemble_patterns)
-    
-    if (!is.null(ensemble_path)) {
-      # Load the data safely
-      tryCatch({
-        ensemble_data <- read.csv(ensemble_path)
-        # Validate structure
-        if (all(c("Actual", "Ensemble") %in% names(ensemble_data))) {
-          # Add Confidence column if not present
-          if (!"Confidence" %in% names(ensemble_data)) {
-            ensemble_data$Confidence <- runif(nrow(ensemble_data), 0.5, 1)
+  })
+  
+  # Load model results on startup (as a fallback if ts metrics not found)
+  observe({
+    # Only run if model_results is NULL (ts metrics not loaded)
+    if (is.null(model_results())) {
+      # Try to find model results file
+      model_patterns <- c(
+        "ALL_Models_Results\\.csv$",
+        "all_metrics_comparison\\.csv$", 
+        "model_performance.*\\.csv$"
+      )
+      
+      model_path <- find_file(model_patterns)
+      
+      if (!is.null(model_path)) {
+        # Load the data safely
+        tryCatch({
+          model_data <- read.csv(model_path)
+          
+          # Validate the data has required columns
+          required_cols <- c("Data_Type", "Model_Method", "Watershed")
+          metric_cols <- c("Accuracy", "F1_Score", "Specificity", "Precision")
+          
+          # Check if the file has at least the minimum required structure
+          if (all(required_cols %in% names(model_data)) && 
+              any(metric_cols %in% names(model_data))) {
+            model_results(model_data)
+          } else {
+            # Missing required columns, use mock data
+            create_mock_model_data()
           }
-          # Add Correct column if not present
-          if (!"Correct" %in% names(ensemble_data)) {
-            ensemble_data$Correct <- ensemble_data$Actual == ensemble_data$Ensemble
-          }
-          ensemble_results(ensemble_data)
-        } else {
-          create_mock_ensemble_data()
-        }
-      }, error = function(e) {
-        message("Error reading ensemble results: ", e$message)
-        create_mock_ensemble_data()
-      })
-    } else {
-      # File not found, use mock data
-      message("Ensemble results file not found. Using mock data.")
-      create_mock_ensemble_data()
+        }, error = function(e) {
+          # Error reading file, use mock data
+          message("Error reading model results: ", e$message)
+          create_mock_model_data()
+        })
+      } else {
+        # File not found, use mock data
+        message("Model results file not found. Using mock data.")
+        create_mock_model_data()
+      }
     }
   })
   
@@ -244,75 +251,50 @@ server <- function(input, output, session) {
     )
   }
   
-  # Generate PCA on the fly if precomputed not available
-  compute_pca <- function(data_type) {
-    # Try to load the raw data first
-    file_patterns <- c(
-      paste0("preprocessed_", data_type, "\\.csv$"),
-      paste0("Processed_Core_Fw_", data_type, "\\.csv$")
+  # Try to find ensemble results file
+  observe({
+    ensemble_patterns <- c(
+      "ensemble_predictions\\.csv$",
+      "ensemble_results.*\\.csv$"
     )
     
-    data_path <- find_file(file_patterns)
+    ensemble_path <- find_file(ensemble_patterns)
     
-    if (is.null(data_path)) {
-      return(NULL)
+    if (!is.null(ensemble_path)) {
+      # Load the data safely
+      tryCatch({
+        ensemble_data <- read.csv(ensemble_path)
+        # Validate structure
+        if (all(c("Actual", "Ensemble") %in% names(ensemble_data))) {
+          # Add Confidence column if not present
+          if (!"Confidence" %in% names(ensemble_data)) {
+            ensemble_data$Confidence <- runif(nrow(ensemble_data), 0.5, 1)
+          }
+          # Add Correct column if not present
+          if (!"Correct" %in% names(ensemble_data)) {
+            ensemble_data$Correct <- ensemble_data$Actual == ensemble_data$Ensemble
+          }
+          ensemble_results(ensemble_data)
+        } else {
+          create_mock_ensemble_data()
+        }
+      }, error = function(e) {
+        message("Error reading ensemble results: ", e$message)
+        create_mock_ensemble_data()
+      })
+    } else {
+      # File not found, use mock data
+      message("Ensemble results file not found. Using mock data.")
+      create_mock_ensemble_data()
     }
-    
-    # Try to read the data
-    tryCatch({
-      data <- read.csv(data_path)
-      
-      # Check if data is valid
-      if (nrow(data) == 0 || ncol(data) < 5) {
-        return(NULL)
-      }
-      
-      # Extract metadata and timeseries columns
-      meta_cols <- c("Fish_id", "Watershed", "Natal_Iso", "Year")
-      meta_cols <- meta_cols[meta_cols %in% names(data)]
-      numeric_cols <- grep("^X", names(data), value = TRUE)
-      
-      if (length(numeric_cols) == 0) {
-        return(NULL)
-      }
-      
-      # Compute PCA
-      pca_result <- prcomp(data[, numeric_cols], scale. = TRUE)
-      
-      # Create PCA data with metadata
-      pca_scores <- as.data.frame(pca_result$x)
-      pca_data <- cbind(pca_scores, data[, meta_cols, drop = FALSE])
-      
-      # Calculate explained variance
-      explained_var <- pca_result$sdev^2 / sum(pca_result$sdev^2)
-      cum_var <- cumsum(explained_var)
-      
-      # Create variance data
-      var_data <- data.frame(
-        PC = paste0("PC", 1:length(explained_var)),
-        Variance = explained_var,
-        CumulativeVariance = cum_var
-      )
-      
-      # Return results
-      return(list(
-        pca_data = pca_data,
-        var_data = var_data,
-        loadings = pca_result$rotation,
-        raw_data = data
-      ))
-    }, error = function(e) {
-      message("Error computing PCA: ", e$message)
-      return(NULL)
-    })
-  }
+  })
   
-  # Load precomputed PCA data or compute it on the fly
+  # Load precomputed PCA data based on selected type
   observe({
     # Get data type
     data_type <- tolower(input$dataType)
     
-    # Try to find precomputed PCA file
+    # Construct file path
     file_patterns <- c(paste0("pca_", data_type, "\\.rds$"))
     pca_file <- find_file(file_patterns)
     
@@ -331,46 +313,16 @@ server <- function(input, output, session) {
                           choices = pc_columns,
                           selected = "PC2")
         
-        # Try to load the raw data separately if not included in precomputed data
-        if (!"raw_data" %in% names(precomputed)) {
-          file_patterns <- c(
-            paste0("preprocessed_", input$dataType, "\\.csv$"),
-            paste0("Processed_Core_Fw_", input$dataType, "\\.csv$")
-          )
-          
-          data_path <- find_file(file_patterns)
-          
-          if (!is.null(data_path)) {
-            # Load raw data safely
-            tryCatch({
-              raw_data(read.csv(data_path))
-            }, error = function(e) {
-              # Create minimal data if loading fails
-              minimal_data <- data.frame(
-                Fish_id = precomputed$pca_data$Fish_id,
-                Watershed = precomputed$pca_data$Watershed
-              )
-              # Add dummy X columns
-              for (i in 1:10) {
-                minimal_data[[paste0("X", i)]] <- NA
-              }
-              raw_data(minimal_data)
-            })
-          } else {
-            # Create minimal data
-            minimal_data <- data.frame(
-              Fish_id = precomputed$pca_data$Fish_id,
-              Watershed = precomputed$pca_data$Watershed
-            )
-            # Add dummy X columns
-            for (i in 1:10) {
-              minimal_data[[paste0("X", i)]] <- NA
-            }
-            raw_data(minimal_data)
-          }
-        } else {
-          # Use raw data from precomputed object
-          raw_data(precomputed$raw_data)
+        # Try to load the raw data
+        file_patterns <- c(
+          paste0("preprocessed_", input$dataType, "\\.csv$"),
+          paste0("Processed_Core_Fw_", input$dataType, "\\.csv$")
+        )
+        
+        data_path <- find_file(file_patterns)
+        
+        if (!is.null(data_path)) {
+          raw_data(read.csv(data_path))
         }
       }, error = function(e) {
         # If loading precomputed fails, compute on the fly
@@ -473,10 +425,6 @@ server <- function(input, output, session) {
       )
     }
     
-    # Debug watershed values (print to console for diagnosing issues)
-    print("Watershed values:")
-    print(table(data$Watershed))
-    
     # Make sure watershed is a factor with consistent levels
     data$Watershed <- as.character(data$Watershed)  # First convert to character
     
@@ -486,10 +434,6 @@ server <- function(input, output, session) {
     data$Watershed <- ifelse(data$Watershed == "YK", "Yukon", data$Watershed)
     data$Watershed <- ifelse(data$Watershed == "Kusko", "Kuskokwim", data$Watershed)
     data$Watershed <- ifelse(data$Watershed == "Nush", "Nushagak", data$Watershed)
-    
-    # Convert back to factor with standard levels
-    data$Watershed <- factor(data$Watershed, 
-                             levels = c("Kuskokwim", "Nushagak", "Yukon"))
     
     # Define fixed watershed colors
     watershed_colors <- c(
@@ -601,34 +545,6 @@ server <- function(input, output, session) {
         theme_void() +
         xlim(0, 1) + ylim(0, 1)
     }
-  })
-  
-  # Variance explained plot
-  output$variancePlot <- renderPlot({
-    req(pca_data())
-    
-    var_data <- pca_data()$var_data
-    # Limit to first 15 components for better visibility
-    var_data <- var_data[1:min(15, nrow(var_data)),]
-    
-    # Create plot
-    ggplot(var_data) +
-      geom_col(aes(x = PC, y = Variance), fill = "steelblue") +
-      geom_line(aes(x = PC, y = CumulativeVariance, group = 1), 
-                color = "red", size = 1) +
-      geom_point(aes(x = PC, y = CumulativeVariance), 
-                 color = "red", size = 3) +
-      scale_y_continuous(
-        labels = scales::percent,
-        sec.axis = sec_axis(~., labels = scales::percent)
-      ) +
-      theme_classic() +
-      labs(
-        title = paste("Variance Explained by Principal Components -", input$dataType, "Data"),
-        x = "Principal Component",
-        y = "Proportion of Variance Explained"
-      ) +
-      theme(axis.text.x = element_text(angle = 45, hjust = 1))
   })
   
   # Model performance heatmap
@@ -978,7 +894,71 @@ server <- function(input, output, session) {
       write.csv(filtered_data, file, row.names = FALSE)
     }
   )
+  
+  # Generate PCA on the fly if precomputed not available
+  compute_pca <- function(data_type) {
+    # Try to load the raw data first
+    file_patterns <- c(
+      paste0("preprocessed_", data_type, "\\.csv$"),
+      paste0("Processed_Core_Fw_", data_type, "\\.csv$")
+    )
+    
+    data_path <- find_file(file_patterns)
+    
+    if (is.null(data_path)) {
+      return(NULL)
+    }
+    
+    # Try to read the data
+    tryCatch({
+      data <- read.csv(data_path)
+      
+      # Check if data is valid
+      if (nrow(data) == 0 || ncol(data) < 5) {
+        return(NULL)
+      }
+      
+      # Extract metadata and timeseries columns
+      meta_cols <- c("Fish_id", "Watershed", "Natal_Iso", "Year")
+      meta_cols <- meta_cols[meta_cols %in% names(data)]
+      numeric_cols <- grep("^X", names(data), value = TRUE)
+      
+      if (length(numeric_cols) == 0) {
+        return(NULL)
+      }
+      
+      # Compute PCA
+      pca_result <- prcomp(data[, numeric_cols], scale. = TRUE)
+      
+      # Create PCA data with metadata
+      pca_scores <- as.data.frame(pca_result$x)
+      pca_data <- cbind(pca_scores, data[, meta_cols, drop = FALSE])
+      
+      # Calculate explained variance
+      explained_var <- pca_result$sdev^2 / sum(pca_result$sdev^2)
+      cum_var <- cumsum(explained_var)
+      
+      # Create variance data
+      var_data <- data.frame(
+        PC = paste0("PC", 1:length(explained_var)),
+        Variance = explained_var,
+        CumulativeVariance = cum_var
+      )
+      
+      # Return results
+      return(list(
+        pca_data = pca_data,
+        var_data = var_data,
+        loadings = pca_result$rotation,
+        raw_data = data
+      ))
+    }, error = function(e) {
+      message("Error computing PCA: ", e$message)
+      return(NULL)
+    })
+  }
 }
 
 # Run the app
 shinyApp(ui = ui, server = server)
+
