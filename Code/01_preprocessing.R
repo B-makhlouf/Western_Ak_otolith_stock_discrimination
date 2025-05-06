@@ -50,7 +50,7 @@ process_otolith_data <- function() {
       
       ind_data_filtered <- ind_data %>% 
         filter(Landmark %in% landmarks | 
-                 (Microns > fw_max_microns & Microns <= fw_max_microns + 300))
+                 (Microns > fw_max_microns & Microns <= fw_max_microns + 200))
       
       # Only count if we have enough data points
       if (nrow(ind_data_filtered) >= 10) {

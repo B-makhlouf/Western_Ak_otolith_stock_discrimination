@@ -320,6 +320,81 @@ create_confusion_matrices <- function(ensemble_results) {
       axis.text.x = element_text(angle = 45, hjust = 1)
     )
   
+
+  # Create model accuracy heatmap specifically focusing on overall accuracy by model type and data source
+  create_model_accuracy_heatmap <- function(all_metrics) {
+    # Extract and summarize accuracy data by data source and model type
+    accuracy_summary <- map_dfr(names(all_metrics), function(model_id) {
+      # Parse model components
+      parts <- strsplit(model_id, "_")[[1]]
+      data_source <- parts[1]
+      model_type <- parts[2]
+      
+      # Get overall accuracy
+      accuracy <- all_metrics[[model_id]]$metrics$Accuracy
+      
+      # Return as data frame row
+      tibble(
+        Data_Source = data_source,
+        Model_Type = model_type,
+        Accuracy = accuracy
+      )
+    })
+    
+    # Standardize data source and model type labels
+    accuracy_summary <- accuracy_summary %>%
+      mutate(
+        Data_Source = factor(Data_Source, 
+                             levels = c("GAM", "MA", "RAW", "Sr88", "Combined", "Outline")),
+        Model_Type = factor(Model_Type, 
+                            levels = c("rf", "svm", "knn"),
+                            labels = c("Random Forest", "SVM", "KNN"))
+      )
+    
+    # Create the heatmap
+    heatmap_plot <- ggplot(accuracy_summary, aes(x = Model_Type, y = Data_Source, fill = Accuracy)) +
+      geom_tile(color = "white", linewidth = 0.5) +
+      geom_text(aes(label = sprintf("%.3f", Accuracy)), 
+                color = "white", size = 3.5, fontface = "bold") +
+      scale_fill_viridis(
+        option = "plasma",
+        direction = -1,
+        labels = scales::percent_format(),
+        limits = c(0.45, 0.95),
+        begin = 0.2,
+        end = 0.9
+      ) +
+      labs(
+        title = "Classification Accuracy by Model and Data Type",
+        x = "Model Type",
+        y = "Data Source",
+        fill = "Accuracy"
+      ) +
+      theme_minimal(base_size = 12) +
+      theme(
+        plot.title = element_text(hjust = 0.5, face = "bold", size = 14),
+        axis.title = element_text(face = "bold"),
+        axis.text = element_text(size = 10),
+        panel.grid = element_blank(),
+        legend.position = "right",
+        legend.key.height = unit(1.5, "cm")
+      )
+    
+    # Save visualization
+    ggsave(
+      here("figures/model_accuracy_heatmap.png"),
+      heatmap_plot,
+      width = 10,
+      height = 8,
+      dpi = 300
+    )
+    
+    return(heatmap_plot)
+  }
+  
+  
+  
+  
   # Combine plots
   combined_plot <- conf_plot + high_conf_plot +
     plot_layout(ncol = 2) +
@@ -506,6 +581,7 @@ extract_fish_ids <- function(picnames) {
 }
 
 # Run all visualizations
+accuracy_heatmap <- create_model_accuracy_heatmap(all_metrics)
 metrics_comparison <- create_model_comparison(all_metrics, calibrated_metrics)
 confusion_matrices <- create_confusion_matrices(ensemble_results)
 calibration_plots <- create_calibration_plots(calibrated_metrics)

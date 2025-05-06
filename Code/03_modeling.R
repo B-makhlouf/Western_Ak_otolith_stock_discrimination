@@ -228,6 +228,7 @@ create_model_visualizations <- function(summary_metrics) {
       y = "Accuracy",
       fill = "Data Source"
     ) +
+    scale_fill_manual(values = c("#4A4238", "#FF784F", "#508484", "#79C99E", "#DB9D47")) +
     theme_minimal() +
     theme(
       legend.position = "bottom",

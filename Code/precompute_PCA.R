@@ -1,8 +1,69 @@
-# precompute_pca.R - Pre-calculates PCA for all data types
+# precompute_pca.R - Pre-calculates PCA for all data types and generates loadings plots
 # Run this script before using the Shiny app to improve reactivity
 
 library(tidyverse)
 library(here)
+library(ggplot2)
+library(viridis)
+
+# Add our new contour plot function
+plot_pca_loadings_contour <- function(PCA_raw, num_components = 5, color_scale = "plasma") {
+  # Extract the loadings data
+  loadings <- as.data.frame(PCA_raw$rotation)
+  
+  # Limit to requested number of components
+  pc_cols <- paste0("PC", 1:num_components)
+  pc_cols <- pc_cols[pc_cols %in% colnames(loadings)]
+  loadings <- loadings[, pc_cols, drop = FALSE]
+  
+  # Get number of data points
+  n_points <- nrow(loadings)
+  
+  # Create a grid for the contour plot
+  grid_points <- 100
+  index_grid <- seq(1, n_points, length.out = grid_points)
+  component_grid <- 1:length(pc_cols)
+  
+  # Create empty grid for interpolation
+  z_grid <- matrix(NA, nrow = grid_points, ncol = length(pc_cols))
+  
+  # Fill the grid with absolute loading values
+  for (j in 1:length(pc_cols)) {
+    pc_name <- pc_cols[j]
+    values <- abs(loadings[[pc_name]])
+    
+    # Use approx to interpolate values onto the grid
+    z_grid[, j] <- approx(1:n_points, values, index_grid, rule = 2)$y
+  }
+  
+  # Convert to long format for ggplot
+  grid_df <- expand.grid(Index = index_grid, Component_Num = 1:length(pc_cols))
+  grid_df$Value <- as.vector(z_grid)
+  grid_df$Component <- paste0("PC", grid_df$Component_Num)
+  grid_df$Component <- factor(grid_df$Component, levels = pc_cols)
+  
+  # Create the visualization
+  feature_plot <- ggplot(grid_df, aes(x = Index, y = 1, fill = Value)) +
+    geom_raster(interpolate = TRUE) +
+    scale_fill_viridis_c(option = color_scale, direction = -1, name = "Loading\n(Abs. value)") +
+    facet_wrap(~ Component, ncol = 1) +
+    labs(
+      title = "Timeseries Loadings onto PCA Components",
+      x = "Index",
+      y = NULL
+    ) +
+    theme_minimal() +
+    theme(
+      axis.text.y = element_blank(),
+      axis.ticks.y = element_blank(),
+      panel.grid.major.y = element_blank(),
+      panel.grid.minor.y = element_blank(),
+      strip.text = element_text(size = 12, face = "bold"),
+      plot.title = element_text(hjust = 0.5, size = 14)
+    )
+  
+  return(feature_plot)
+}
 
 # Function to precompute PCA for a given data type
 precompute_pca <- function(data_type) {
@@ -75,10 +136,14 @@ precompute_pca <- function(data_type) {
 # Define data types
 data_types <- c("GAM", "MA", "RAW", "Sr88", "Combined")
 
-# Create directory for precomputed data
+# Create directories for precomputed data and plots
 output_dir <- here("data/pca_precomputed")
-if (!dir.exists(output_dir)) {
-  dir.create(output_dir, recursive = TRUE)
+plots_dir <- here("data/pca_plots")
+
+for (dir in c(output_dir, plots_dir)) {
+  if (!dir.exists(dir)) {
+    dir.create(dir, recursive = TRUE)
+  }
 }
 
 # Precompute PCA for all data types
@@ -88,10 +153,27 @@ for (data_type in data_types) {
   
   # Save results if computation was successful
   if (!is.null(pca_results[[data_type]])) {
+    # Save the PCA results
     saveRDS(
       pca_results[[data_type]], 
       file.path(output_dir, paste0("pca_", tolower(data_type), ".rds"))
     )
+    
+    # Generate and save loadings plot
+    # Create a PCA_raw-like object to work with the plot_pca_loadings_contour function
+    PCA_raw <- list(rotation = pca_results[[data_type]]$loadings)
+    
+    # Generate contour plot
+    contour_plot <- plot_pca_loadings_line(PCA_raw)
+    ggsave(
+      file.path(plots_dir, paste0("pca_loadings_contour_", tolower(data_type), ".png")),
+      contour_plot,
+      width = 10,
+      height = 8,
+      dpi = 300
+    )
+    
+    message("  Saved PCA loadings contour plot for ", data_type)
   }
 }
 
@@ -99,3 +181,4 @@ for (data_type in data_types) {
 saveRDS(pca_results, file.path(output_dir, "all_pca_results.rds"))
 
 message("PCA precomputation complete. Results saved to: ", output_dir)
+message("PCA loadings plots saved to: ", plots_dir)

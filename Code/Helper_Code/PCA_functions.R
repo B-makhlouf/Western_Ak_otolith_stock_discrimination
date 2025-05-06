@@ -105,83 +105,93 @@ pca_plot <- function(PCA_full, pca_x = 1, pca_y = 2) {
 
 ### This function displays the feature importance along the timeseries, either as a "line" or a " bar graph" 
 
-plot_pca_loadings <- function(PCA_raw, plot_type = "line") {
-  # Prepare the loadings data
+plot_pca_loadings <- function(PCA_raw, num_components = 3, color_scale = "plasma") {
+  # Extract the loadings data
   loadings <- as.data.frame(PCA_raw$rotation)
-  loadings$Feature <- rownames(loadings)
   
-  # Create a data frame from the matrix
-  feature_matrix <- matrix(1, nrow = 5, ncol = length(loadings$PC1))
-  feature_matrix[1, ] <- abs(loadings$PC1)
-  feature_matrix[2, ] <- abs(loadings$PC2)
-  feature_matrix[3, ] <- abs(loadings$PC3)
-  feature_matrix[4, ] <- abs(loadings$PC4)
-  feature_matrix[5, ] <- abs(loadings$PC5)
+  # Limit to requested number of components
+  pc_cols <- paste0("PC", 1:num_components)
+  loadings <- loadings[, pc_cols, drop = FALSE]
   
   # Convert to long format for ggplot
-  plot_data <- data.frame(
-    Index = rep(1:length(loadings$PC1), times = 5),
-    FeatureImportance = c(
-      feature_matrix[1, ],
-      feature_matrix[2, ],
-      feature_matrix[3, ],
-      feature_matrix[4, ],
-      feature_matrix[5, ]
-    ),
-    Component = rep(c("PC1", "PC2", "PC3", "PC4", "PC5"), each = length(loadings$PC1)),
-    Y = rep(1, (5 * length(loadings$PC1))) # Constant Y value for straight line
-  )
+  loadings_long <- loadings %>%
+    mutate(Index = 1:nrow(loadings)) %>%
+    pivot_longer(
+      cols = starts_with("PC"),
+      names_to = "Component",
+      values_to = "Loading"
+    ) %>%
+    # Take absolute value for visualization
+    mutate(Abs_Loading = abs(Loading))
   
-  # Line plot
-  if (plot_type == "line") {
-    feature_plot <- ggplot(plot_data, aes(x = Index, y = Y, color = FeatureImportance)) +
-      geom_point(size = 3) +
-      scale_color_viridis(option = "plasma", direction = -1) +
-      theme_grey() +
-      labs(
-        title = "Timeseries Loadings onto PCA variance",
-        x = "Index",
-        y = NULL, # Remove y-axis label
-        color = "Loading (Abs. value)"
-      ) +
-      facet_wrap(~Component, nrow = 5) + # Separate panels for PC1 to PC5
-      theme(
-        axis.line.y = element_blank(), # Remove y-axis line
-        axis.ticks.y = element_blank(), # Remove y-axis ticks
-        axis.text.y = element_blank(), # Remove y-axis text
-        legend.title = element_text(size = 10),
-        legend.text = element_text(size = 8)
-      )
-    return(feature_plot)
-  }
+  # Set the component as a factor with correct order
+  loadings_long$Component <- factor(loadings_long$Component, levels = pc_cols)
   
-  # Bar plot
-  if (plot_type == "bar") {
-    feature_bar_plot <- ggplot(plot_data, aes(x = Index, y = FeatureImportance, color = FeatureImportance)) +
-      geom_bar(stat = "identity", position = "identity", width = 1, alpha = 0.4) + 
-      scale_color_viridis(option = "plasma", direction = -1) +
-      theme_grey() +
-      labs(
-        title = "Timeseries Loadings onto PCA variance",
-        x = "Index",
-        y = NULL, # Remove y-axis label
-        fill = "Loading (Abs. value)"
-      ) +
-      facet_wrap(~Component, nrow = 5) + # Separate panels for PC1 to PC5
-      theme(
-        axis.line.y = element_blank(), # Remove y-axis line
-        axis.ticks.y = element_blank(), # Remove y-axis ticks
-        axis.text.y = element_blank(), # Remove y-axis text
-        legend.title = element_text(size = 10),
-        legend.text = element_text(size = 8)
-      )
-    return(feature_bar_plot)
-  }
+  # Create the visualization
+  feature_plot <- ggplot(loadings_long, aes(x = Index, y = 1, color = Abs_Loading)) +
+    geom_point(size = 3) +
+    scale_color_viridis_c(option = color_scale, direction = -1, name = "Loading\n(Abs. value)") +
+    facet_wrap(~ Component, ncol = 1, strip.position = "right") +
+    labs(
+      title = "Timeseries Loadings onto PCA Components",
+      x = "Index",
+      y = NULL
+    ) +
+    theme_minimal() +
+    theme(
+      axis.text.y = element_blank(),
+      axis.ticks.y = element_blank(),
+      panel.grid.major.y = element_blank(),
+      panel.grid.minor.y = element_blank(),
+      strip.text = element_text(size = 12, face = "bold"),
+      plot.title = element_text(hjust = 0.5, size = 14)
+    )
   
-  # Default: Return an error if an invalid plot type is specified
-  stop("Invalid plot type. Please use 'line' or 'bar'.")
+  return(feature_plot)
 }
 
+plot_pca_loadings_line <- function(PCA_raw, num_components = 5, color_palette = viridis::plasma(5)) {
+  # Extract the loadings data
+  loadings <- as.data.frame(PCA_raw$rotation)
+  
+  # Limit to requested number of components
+  pc_cols <- paste0("PC", 1:num_components)
+  pc_cols <- pc_cols[pc_cols %in% colnames(loadings)]
+  loadings <- loadings[, pc_cols, drop = FALSE]
+  
+  # Convert to long format for ggplot
+  loadings_long <- loadings %>%
+    mutate(Index = 1:nrow(loadings)) %>%
+    pivot_longer(
+      cols = starts_with("PC"),
+      names_to = "Component",
+      values_to = "Loading"
+    ) %>%
+    # Take absolute value for visualization
+    mutate(Abs_Loading = abs(Loading))
+  
+  # Set the component as a factor with correct order
+  loadings_long$Component <- factor(loadings_long$Component, levels = pc_cols)
+  
+  # Create the visualization
+  feature_plot <- ggplot(loadings_long, aes(x = Index, y = Abs_Loading, color = Component)) +
+    geom_line(size = 1.5, color = "black") +
+    scale_color_manual(values = color_palette[1:length(pc_cols)]) +
+    facet_wrap(~ Component, ncol = 1) +
+    labs(
+      title = "Timeseries Loadings onto PCA Components",
+      x = "Index",
+      y = "Absolute Loading Value"
+    ) +
+    theme_minimal() +
+    theme(
+      strip.text = element_text(size = 12, face = "bold"),
+      plot.title = element_text(hjust = 0.5, size = 14),
+      legend.position = "none"
+    )
+  
+  return(feature_plot)
+}
 
 ## Scree plot of PCA 
 scree_plot <- function(pca_result) {
