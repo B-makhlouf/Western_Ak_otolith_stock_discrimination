@@ -1,7 +1,7 @@
 # ==============================================================================
-# KALMAN FILTER PROCESSING FOR OTOLITH TIME SERIES DATA
+# TMB KALMAN FILTER PROCESSING FOR OTOLITH TIME SERIES DATA
 # ==============================================================================
-# This script applies Kalman filtering to interpolated raw Sr87/86 data
+# This script applies TMB Kalman filtering to interpolated raw Sr87/86 data
 # Input: preprocessed_RAW.csv from the preprocessing pipeline
 # Output: Kalman filtered time series data for machine learning analysis
 # Author: [Your Name]
@@ -21,12 +21,12 @@ library(progress)
 # CONFIGURATION AND SETUP
 # ==============================================================================
 
-message("=== KALMAN FILTER PROCESSING PIPELINE STARTED ===")
+message("=== TMB KALMAN FILTER PROCESSING PIPELINE STARTED ===")
 
 # Configuration
 config <- list(
   filter_enabled = TRUE,        # Set to FALSE for smoothing only
-  initial_R = NULL,            # Observation variance (NULL = auto-calculate)
+  initial_R = .001,            # Observation variance (NULL = auto-calculate)
   initial_Q = NULL,            # Process variance (NULL = auto-calculate)
   log_transform = FALSE        # Whether to log-transform data before filtering
 )
@@ -277,7 +277,7 @@ Type objective_function<Type>::operator() ()
         # Create smoothed fit plot
         smoothed_plot <- ggplot(plot_data, aes(x = Index)) +
           geom_point(aes(y = Raw), color = "gray60", alpha = 0.4, size = 0.8) +
-          geom_line(aes(y = Kalman_Smoothed), color = "red", size = 1.2) +
+          geom_line(aes(y = Kalman_Smoothed), color = "red", linewidth = 1.2) +
           labs(
             title = paste0("Kalman Smoothed Sr87/86: ", fish_id, " (", watershed, ")"),
             x = "Time Index",

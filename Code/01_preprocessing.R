@@ -28,7 +28,7 @@ config <- list(
   window_size = 60,           # For moving average smoothing
   gamma_value = 0.8,          # For GAM smoothing intensity
   landmarks = c("Core", "Fw"), # Always use both landmarks
-  marine_extension = 150      # Microns beyond freshwater to include
+  marine_extension = 50     # Microns beyond freshwater to include
 )
 
 # Create output directories
@@ -267,14 +267,14 @@ for (i in seq_along(landmark_files)) {
     combined_interp <- c(gam_iso_interp, sr88_interp)
     
     # ===============================
-    # CREATE DIAGNOSTIC VISUALIZATION
+    # CREATE SIMPLIFIED DIAGNOSTIC VISUALIZATION WITH RAW POINTS
     # ===============================
     
-    # Prepare data for plotting
+    # Prepare data for plotting - include raw data points
     original_data <- data.frame(
       Index = 1:nrow(ind_data_filtered),
       Microns = ind_data_filtered$Microns,
-      Iso_Raw = ind_data_filtered$Iso,
+      Iso_Raw = ind_data_filtered$Iso,  # Raw Sr87/86 values
       Sr88_Raw = ind_data_filtered$Sr88,
       Sr88_Normalized = norm_sr88,
       Landmark = ind_data_filtered$Landmark
@@ -282,70 +282,82 @@ for (i in seq_along(landmark_files)) {
     
     interpolated_data <- data.frame(
       Index = 1:interp_points,
-      Iso_Raw = raw_iso,
       Iso_MA = ma_iso_interp,
       Iso_GAM = gam_iso_interp,
       Sr88_Normalized = sr88_interp
     )
     
-    # Create plots
-    p1 <- ggplot(original_data, aes(x = Index, y = Iso_Raw, color = Landmark)) +
-      geom_point(alpha = 0.6) +
-      geom_line(alpha = 0.3) +
-      labs(title = "Original Sr87/86 Data with Landmarks",
-           x = "Index", y = "Sr87/86 Ratio") +
-      theme_minimal() +
-      scale_color_viridis_d()
+    # Add interpolated raw data to the plotting data
+    interpolated_data$Iso_Raw <- raw_iso
     
-    p2 <- ggplot(original_data, aes(x = Index, y = Sr88_Normalized, color = Landmark)) +
-      geom_point(alpha = 0.6) +
-      geom_line(alpha = 0.3) +
-      labs(title = "Normalized Sr88 Data",
-           x = "Index", y = "Normalized Sr88") +
-      theme_minimal() +
-      scale_color_viridis_d()
+    # Create plots with interpolated raw data visible and white background
     
-    p3 <- ggplot(interpolated_data, aes(x = Index)) +
-      geom_line(aes(y = Iso_Raw, color = "Raw"), alpha = 0.7) +
-      geom_line(aes(y = Iso_MA, color = "Moving Average"), alpha = 0.7) +
-      geom_line(aes(y = Iso_GAM, color = "GAM Smoothed"), alpha = 0.7) +
-      labs(title = "Smoothed Sr87/86 Comparisons",
-           x = "Interpolated Index", y = "Sr87/86 Ratio",
-           color = "Method") +
-      theme_minimal() +
-      scale_color_manual(values = c("Raw" = "gray", "Moving Average" = "blue", "GAM Smoothed" = "red"))
+    # Plot 1: Sr87/86 with interpolated raw, GAM and Moving Average lines
+    p1 <- ggplot(data = interpolated_data, aes(x = Index)) +
+      # Add all three lines
+      geom_point(aes(y = Iso_Raw, color = "Raw Interpolated"), alpha = 0.8, size = 1) +
+      geom_line(aes(y = Iso_MA, color = "Moving Average"), alpha = 0.9, size = 1.2) +
+      geom_line(aes(y = Iso_GAM, color = "GAM Smoothed"), alpha = 0.9, size = 1.2) +
+      labs(title = "Sr87/86: Raw Interpolated vs Smoothed Comparisons",
+           x = "Interpolated Index", 
+           y = "Sr87/86 Ratio",
+           color = "Processing Method") +
+      theme_classic() +  # White background theme
+      theme(
+        plot.title = element_text(size = 12, face = "bold"),
+        axis.title = element_text(size = 10),
+        legend.title = element_text(size = 10),
+        legend.text = element_text(size = 9),
+        panel.background = element_rect(fill = "white", color = NA),
+        plot.background = element_rect(fill = "white", color = NA),
+        legend.background = element_rect(fill = "white", color = NA)
+      ) +
+      scale_color_manual(values = c("Raw Interpolated" = "#7F8C8D", 
+                                    "Moving Average" = "#2E86C1", 
+                                    "GAM Smoothed" = "#E74C3C"))
     
-    p4 <- ggplot(interpolated_data, aes(x = Index, y = Sr88_Normalized)) +
-      geom_line(color = "darkgreen", alpha = 0.7) +
-      labs(title = "Final Normalized Sr88",
-           x = "Interpolated Index", y = "Normalized Sr88") +
-      theme_minimal()
+    # Plot 2: Sr88 with interpolated data
+    p2 <- ggplot(data = interpolated_data, aes(x = Index, y = Sr88_Normalized)) +
+      # Add interpolated Sr88 line
+      geom_line(color = "#27AE60", alpha = 0.9, size = 1.2) +
+      labs(title = "Sr88: Normalized and Interpolated",
+           x = "Interpolated Index", 
+           y = "Normalized Sr88") +
+      theme_classic() +  # White background theme
+      theme(
+        plot.title = element_text(size = 12, face = "bold"),
+        axis.title = element_text(size = 10),
+        panel.background = element_rect(fill = "white", color = NA),
+        plot.background = element_rect(fill = "white", color = NA)
+      )
     
-    # Combine plots
+    # Combine plots side by side
     diagnostic_plot <- plot_grid(
-      p1, p2, p3, p4,
+      p1, p2,
       ncol = 2, 
-      labels = c("A", "B", "C", "D"),
+      labels = c("A", "B"),
       label_size = 12
     )
     
-    # Add title
+    # Add title with white background
     title <- ggdraw() + 
       draw_label(
         paste0("Preprocessing Diagnostics: ", fish_id, " (", watershed, ")"),
         fontface = 'bold',
         size = 14
-      )
+      ) +
+      theme(plot.background = element_rect(fill = "white", color = NA))
     
     final_plot <- plot_grid(
       title, diagnostic_plot,
       ncol = 1,
       rel_heights = c(0.1, 1)
-    )
+    ) +
+      theme(plot.background = element_rect(fill = "white", color = NA))
     
-    # Save diagnostic plot
+    # Save diagnostic plot with white background
     diagnostic_filename <- file.path(output_dirs$diagnostics, paste0(fish_id, "_preprocessing_diagnostic.png"))
-    ggsave(diagnostic_filename, final_plot, width = 12, height = 8, dpi = 300)
+    ggsave(diagnostic_filename, final_plot, width = 12, height = 6, dpi = 300, bg = "white")
     
     # ===============================
     # STORE RESULTS
@@ -467,7 +479,7 @@ message(paste("  ✓ Successfully processed:", success_count, "files"))
 message(paste("  ✗ Failed processing:", total_count - success_count, "files"))
 message(paste("  📊 Success rate:", round(100 * success_count / total_count, 1), "%"))
 
-# Generate summary plots
+# Generate summary plots with white background
 if (success_count > 0) {
   successful_data <- processing_summary[processing_summary$Status == "Success", ]
   
@@ -486,11 +498,16 @@ if (success_count > 0) {
     geom_text(aes(label = Count), vjust = -0.5) +
     labs(title = "Successfully Processed Files by Watershed",
          x = "Watershed", y = "Number of Files") +
-    theme_minimal() +
+    theme_classic() +  # White background theme
+    theme(
+      panel.background = element_rect(fill = "white", color = NA),
+      plot.background = element_rect(fill = "white", color = NA),
+      legend.background = element_rect(fill = "white", color = NA)
+    ) +
     scale_fill_viridis_d()
   
   summary_plot_filename <- file.path(output_dirs$diagnostics, "processing_summary_plot.png")
-  ggsave(summary_plot_filename, p_summary, width = 8, height = 6, dpi = 300)
+  ggsave(summary_plot_filename, p_summary, width = 8, height = 6, dpi = 300, bg = "white")
   
   message(paste("Summary visualizations saved to:", output_dirs$diagnostics))
 }
