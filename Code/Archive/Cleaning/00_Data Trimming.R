@@ -69,6 +69,13 @@ metadata_path <- here("/Users/benjaminmakhlouf/Research_repos/Western_Ak_otolith
 output_dir <- here("Data/Processed/Trim_Locations/Diagnostic_Plots")
 la_data_dir <- here("Data/Processed/Trim_Locations")
 
+#2022 Kuskokwim 
+data_dir <- here("/Users/benjaminmakhlouf/Research_repos/04_Western_Ak_otolith_stock_discrimination/data/Raw/LA Data/2022_Kusko")
+metadata_path <- here("/Users/benjaminmakhlouf/Research_repos/04_Western_Ak_otolith_stock_discrimination/data/Extracted Natal Origins/2022_Kusko_Natal_Origins_Genetics_CPUE.csv")
+output_dir <- here("Data/Processed/Trim_Locations/Diagnostic_Plots")
+la_data_dir <- here("Data/Processed/Trim_Locations")
+
+
 
 # # 2014 Nushagak 
 data_dir <- here("Data/Raw/LA Data/2014 Nush")

@@ -1,28 +1,24 @@
-# Modified modeling script using caret instead of tidymodels
+# Modified version of 03_modeling.R to create ONLY the accuracy heatmap
+# Saves to specific location with specific filename
+
 library(tidyverse)
-library(caret)
+library(tidymodels)
 library(here)
 library(viridis)
 library(scales)
 
-# Create output directory
+# Create the specific output directory
 output_dir <- "/Users/benjaminmakhlouf/Research_repos/04_Western_Ak_otolith_stock_discrimination/Figures/ts_Classification"
 dir.create(output_dir, recursive = TRUE, showWarnings = FALSE)
 
 # Configuration
 config <- list(
   data_sources = c("GAM", "MA", "RAW", "Sr88", "Combined"),
-  model_types = c("rf", "svmRadial", "knn"),
+  model_types = c("rf", "svm", "knn"),
   test_prop = 0.2,
   cv_folds = 5,
   random_seed = 123
 )
-
-set.seed(config$random_seed)
-
-# ============================================================================
-# CONSISTENT SPLIT CREATION
-# ============================================================================
 
 # Load all preprocessed time series data
 load_ts_data <- function() {
@@ -40,39 +36,22 @@ load_ts_data <- function() {
   return(all_data)
 }
 
-all_data <- load_ts_data()
-
-# Create ONE consistent train/test split for ALL data types
-create_consistent_split <- function(all_data, config) {
-  # Find common fish IDs across all datasets
-  fish_ids <- lapply(all_data, function(data) unique(data$Fish_id))
+# Create train/test split
+create_ts_split <- function(all_data, config) {
+  set.seed(config$random_seed)
+  
+  fish_ids <- lapply(all_data, function(data) data$Fish_id)
   common_fish_ids <- Reduce(intersect, fish_ids)
   message(paste("Found", length(common_fish_ids), "common Fish_ids across datasets"))
   
-  # Create single train/test split
-  set.seed(config$random_seed)
   test_indices <- sample(length(common_fish_ids), size = floor(length(common_fish_ids) * config$test_prop))
   test_fish_ids <- common_fish_ids[test_indices]
-  train_fish_ids <- setdiff(common_fish_ids, test_fish_ids)
   
-  message(paste("Train samples:", length(train_fish_ids)))
-  message(paste("Test samples:", length(test_fish_ids)))
-  
-  # Apply consistent split to all data types
   split_data <- list()
   for (data_type in names(all_data)) {
-    data <- all_data[[data_type]] %>% filter(Fish_id %in% common_fish_ids)
-    
-    # Prepare data for caret (remove ID columns, ensure factor)
-    train_data <- data %>% 
-      filter(Fish_id %in% train_fish_ids) %>%
-      select(-Fish_id, -Year, -Natal_Iso) %>%
-      mutate(Watershed = as.factor(Watershed))
-    
-    test_data <- data %>% 
-      filter(Fish_id %in% test_fish_ids) %>%
-      select(-Fish_id, -Year, -Natal_Iso) %>%
-      mutate(Watershed = as.factor(Watershed))
+    data <- all_data[[data_type]]
+    train_data <- data %>% filter(!Fish_id %in% test_fish_ids)
+    test_data <- data %>% filter(Fish_id %in% test_fish_ids)
     
     split_data[[data_type]] <- list(
       train = train_data,
@@ -81,79 +60,54 @@ create_consistent_split <- function(all_data, config) {
     message(paste("  ", data_type, "split:", nrow(train_data), "training samples,", 
                   nrow(test_data), "testing samples"))
   }
-  
-  # Save split info for reproducibility
-  split_info <- list(
-    train_fish_ids = train_fish_ids,
-    test_fish_ids = test_fish_ids,
-    config = config
-  )
-  saveRDS(split_info, here("data/consistent_split_info.rds"))
-  
   return(split_data)
 }
 
-# Create consistent split
-split_data <- create_consistent_split(all_data, config)
-
-# ============================================================================
-# CARET MODELING
-# ============================================================================
-
-# Train models using caret
-train_caret_models_for_heatmap <- function(split_data, config) {
+# Train models (simplified to only collect metrics needed for heatmap)
+train_ts_models_for_heatmap <- function(split_data, config) {
   all_metrics <- list()
-  
-  # Set up training control (no CV for speed, just like original)
-  train_control <- trainControl(
-    method = "none",
-    verboseIter = FALSE,
-    savePredictions = FALSE
-  )
   
   for (data_source in names(split_data)) {
     train_data <- split_data[[data_source]]$train
     test_data <- split_data[[data_source]]$test
     
+    train_data$Watershed <- as.factor(train_data$Watershed)
+    test_data$Watershed <- as.factor(test_data$Watershed)
+    
+    recipe_spec <- recipe(Watershed ~ ., data = train_data) %>%
+      update_role(Fish_id, new_role = "ID") %>%
+      update_role(Year, Natal_Iso, new_role = "ID") %>%
+      step_normalize(all_predictors(), -all_nominal(), -has_role("ID"))
+    
     for (model_type in config$model_types) {
       model_id <- paste(data_source, model_type, sep = "_")
       message(paste("Training model:", model_id))
       
-      # Set seed before each model
-      set.seed(config$random_seed)
-      
-      # Train model based on type
+      # Define model specification
       if (model_type == "rf") {
-        model_fit <- train(
-          Watershed ~ ., 
-          data = train_data,
-          method = "rf",
-          trControl = train_control,
-          preProcess = c("center", "scale")
-        )
-      } else if (model_type == "svmRadial") {
-        model_fit <- train(
-          Watershed ~ ., 
-          data = train_data,
-          method = "svmRadial",
-          trControl = train_control,
-          preProcess = c("center", "scale")
-        )
+        model_spec <- rand_forest() %>%
+          set_engine("ranger") %>%
+          set_mode("classification")
+      } else if (model_type == "svm") {
+        model_spec <- svm_rbf() %>%
+          set_engine("kernlab") %>%
+          set_mode("classification")
       } else if (model_type == "knn") {
-        model_fit <- train(
-          Watershed ~ ., 
-          data = train_data,
-          method = "knn",
-          trControl = train_control,
-          preProcess = c("center", "scale")
-        )
+        model_spec <- nearest_neighbor() %>%
+          set_engine("kknn") %>%
+          set_mode("classification")
       }
       
-      # Make predictions
-      predictions <- predict(model_fit, test_data)
+      workflow_spec <- workflow() %>%
+        add_recipe(recipe_spec) %>%
+        add_model(model_spec)
       
-      # Calculate accuracy
-      acc <- mean(predictions == test_data$Watershed)
+      final_fit <- workflow_spec %>% fit(data = train_data)
+      predictions <- predict(final_fit, test_data) %>%
+        bind_cols(test_data %>% select(Watershed)) %>%
+        mutate(correct = Watershed == .pred_class)
+      
+      acc <- mean(predictions$correct)
       
       all_metrics[[model_id]] <- list(
         accuracy = acc,
@@ -180,31 +134,36 @@ train_caret_models_for_heatmap <- function(split_data, config) {
   return(summary_metrics)
 }
 
-# Create multimodel heatmap (unchanged)
+# Create ONLY the accuracy heatmap
 create_multimodel_heatmap <- function(summary_metrics, save_path) {
+  # Prepare data for visualization
   accuracy_summary <- summary_metrics %>%
     mutate(
       Data_Source = factor(Data_Source, 
                            levels = c("GAM", "MA", "RAW", "Sr88", "Combined")),
       Model_Type = factor(Model_Type, 
-                          levels = c("rf", "svmRadial", "knn"),
+                          levels = c("rf", "svm", "knn"),
                           labels = c("Random Forest", "SVM", "KNN"))
     )
   
+  # Find min and max accuracy for better scaling
   min_acc <- min(accuracy_summary$Accuracy)
   max_acc <- max(accuracy_summary$Accuracy)
   mid_point <- (min_acc + max_acc) / 2
   
+  # Set custom breaks
   custom_breaks <- seq(
     from = floor(min_acc * 100) / 100,
     to = ceiling(max_acc * 100) / 100,
     length.out = 5
   )
   
+  # Create the heatmap with blue-yellow-red color scale
   heatmap_plot <- ggplot(accuracy_summary, aes(x = Model_Type, y = Data_Source, fill = Accuracy)) +
     geom_tile(color = "white", linewidth = 0.5) +
     geom_text(aes(label = sprintf("%.3f", Accuracy)), 
               color = "black", size = 4, fontface = "bold") +
+    # Blue-yellow-red scale
     scale_fill_gradientn(
       colors = c("dodgerblue4", "dodgerblue", "yellow", "orange", "firebrick"),
       values = scales::rescale(c(min_acc, min_acc + (max_acc - min_acc) * 0.25, 
@@ -231,26 +190,44 @@ create_multimodel_heatmap <- function(summary_metrics, save_path) {
       legend.text = element_text(size = 10)
     )
   
-  ggsave(save_path, heatmap_plot, width = 10, height = 8, dpi = 300)
+  # Save the plot
+  ggsave(
+    save_path,
+    heatmap_plot,
+    width = 10,
+    height = 8,
+    dpi = 300
+  )
+  
   message(paste("✓ Heatmap saved to:", save_path))
   return(heatmap_plot)
 }
 
 # Main execution
 main <- function() {
-  message("Training models for heatmap...")
-  summary_metrics <- train_caret_models_for_heatmap(split_data, config)
+  message("Loading time series data...")
+  ts_data <- load_ts_data()
   
-  # Create and save heatmap
-  output_file <- file.path(output_dir, "multimodel_comp_caret.png")
+  # Check for existing split or create new one
+  split_file <- here("data/ts_split_data.rds")
+  if (file.exists(split_file)) {
+    message("Loading existing train/test split...")
+    split_data <- readRDS(split_file)
+  } else {
+    message("Creating new train/test split...")
+    split_data <- create_ts_split(ts_data, config)
+    saveRDS(split_data, split_file)
+  }
+  
+  message("Training models for heatmap...")
+  summary_metrics <- train_ts_models_for_heatmap(split_data, config)
+  
+  # Create and save ONLY the heatmap
+  output_file <- file.path(output_dir, "multimodel_comp.png")
   heatmap_plot <- create_multimodel_heatmap(summary_metrics, output_file)
   
   message("✓ Heatmap creation completed!")
   message(paste("File saved to:", output_file))
-  
-  # Save summary metrics for later use
-  write_csv(summary_metrics, here("data/ts_summary_metrics_caret.csv"))
-  message("Summary metrics saved to: data/ts_summary_metrics_caret.csv")
   
   return(summary_metrics)
 }
