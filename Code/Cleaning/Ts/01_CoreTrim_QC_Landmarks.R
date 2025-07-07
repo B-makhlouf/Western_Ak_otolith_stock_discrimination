@@ -282,7 +282,8 @@ server <- function(input, output, session) {
     updateProgressBar(
       session = session,
       id = "progress_bar",
-      value = values$current_index - 1
+      value = values$current_index - 1,
+      total = length(remaining_files)
     )
   })
   
