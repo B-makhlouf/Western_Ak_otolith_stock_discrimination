@@ -1,119 +1,132 @@
-library(tidymodels)
-library(tidyverse)
+# Load required libraries
 library(here)
+library(dplyr)
 
-#######################################################################################################################################################################################
-##### ML Comparison Across Multiple Data Types
-#######################################################################################################################################################################################
+########## STEP 1 
+################################################################################
+#### Create test/train splits from each of the datasets, keeping the same fishIDs
 
-# Function to load and prepare data
-load_data <- function(data_type) {
-  file_path <- here(paste0("/Users/benjaminmakhlouf/Research_repos/04_Western_Ak_otolith_stock_discrimination/data/LA_Data/Preprocessed_ts_matrices/NatalToMarine_Processed_", data_type, ".csv"))
+# Set seed for reproducibility
+set.seed(123)
+
+# Define data types
+data_types <- c("RAW", "GAM", "MA", "Sr88", "Combined")
+
+# Define paths
+base_data_path <- "/Users/benjaminmakhlouf/Research_repos/04_Western_Ak_otolith_stock_discrimination/data/LA_Data/Preprocessed_ts_matrices"
+train_test_dir <- "/Users/benjaminmakhlouf/Research_repos/04_Western_Ak_otolith_stock_discrimination/data/LA_Data/Train_Test"
+
+# Create output directory if it doesn't exist
+if (!dir.exists(train_test_dir)) {
+  dir.create(train_test_dir, recursive = TRUE)
+  cat("Created directory:", train_test_dir, "\n")
+}
+
+# Define metadata columns to exclude from modeling
+metadata_columns <- c("Fish_id", "Year", "Natal_Iso", "Natal_Start", "Marine_Start", 
+                      "Marine_End", "Original_Data_Points", "Interpolated_Points")
+
+# Load all datasets and get common fish IDs
+all_data <- list()
+for (data_type in data_types) {
+  file_path <- file.path(base_data_path, paste0("NatalToMarine_Processed_", data_type, ".csv"))
   
-  if (!file.exists(file_path)) {
-    warning(paste("File not found:", file_path))
-    return(NULL)
+  if (file.exists(file_path)) {
+    all_data[[data_type]] <- read.csv(file_path) %>%
+      mutate(Watershed = as.factor(Watershed))
+    cat(paste("Loaded", data_type, ":", nrow(all_data[[data_type]]), "samples\n"))
+  } else {
+    cat(paste("File not found:", file_path, "\n"))
   }
+}
+
+# Get common fish IDs across all datasets
+fish_ids <- lapply(all_data, function(x) x$Fish_id)
+common_fish_ids <- Reduce(intersect, fish_ids)
+
+# Create train/test split based on Fish_id
+unique_fish_ids <- unique(common_fish_ids)
+train_fish_ids <- sample(unique_fish_ids, size = 0.8 * length(unique_fish_ids))
+test_fish_ids <- setdiff(unique_fish_ids, train_fish_ids)
+
+cat(paste("Train/test split:", length(train_fish_ids), "training fish,", length(test_fish_ids), "testing fish\n"))
+
+# Loop through each dataset and save train/test splits
+for (data_type in names(all_data)) {
+  cat(paste("Processing", data_type, "...\n"))
   
-  data <- read.csv(file_path) %>%
+  # Filter to common fish IDs
+  data <- all_data[[data_type]] %>%
+    filter(Fish_id %in% common_fish_ids)
+  
+  # Split data by Fish_id
+  train_data <- data[data$Fish_id %in% train_fish_ids, ]
+  test_data <- data[data$Fish_id %in% test_fish_ids, ]
+  
+  # Remove metadata columns - keep ONLY Watershed (target) and predictors
+  train_clean <- train_data %>%
+    select(-all_of(metadata_columns))
+  
+  test_clean <- test_data %>%
+    select(-all_of(metadata_columns))
+  
+  # Save files
+  train_filename <- file.path(train_test_dir, paste0("Train_", data_type, ".csv"))
+  test_filename <- file.path(train_test_dir, paste0("Test_", data_type, ".csv"))
+  
+  write.csv(train_clean, train_filename, row.names = FALSE)
+  write.csv(test_clean, test_filename, row.names = FALSE)
+  
+  cat(paste("Saved:", basename(train_filename), "(", nrow(train_clean), "samples,", ncol(train_clean)-1, "predictors )\n"))
+  cat(paste("Saved:", basename(test_filename), "(", nrow(test_clean), "samples,", ncol(test_clean)-1, "predictors )\n"))
+}
+
+# Save Fish_id splits for reference
+fish_id_splits <- data.frame(
+  Fish_id = c(train_fish_ids, test_fish_ids),
+  Split = c(rep("Train", length(train_fish_ids)), rep("Test", length(test_fish_ids)))
+)
+
+write.csv(fish_id_splits, file.path(train_test_dir, "Fish_ID_Splits.csv"), row.names = FALSE)
+cat(paste("\nAll train/test sets saved to:", train_test_dir, "\n"))
+
+################################################################################
+########## STEP 2, run the models 
+
+# Set seed for reproducibility
+set.seed(123)
+
+# Define data types and models
+data_types <- c("RAW", "GAM", "MA", "Sr88", "Combined")
+train_test_dir <- "/Users/benjaminmakhlouf/Research_repos/04_Western_Ak_otolith_stock_discrimination/data/LA_Data/Train_Test"
+
+# Create results data frame
+results <- data.frame()
+
+# Loop through each dataset and model
+for (data_type in data_types) {
+  
+  # Load data
+  train_data <- read.csv(file.path(train_test_dir, paste0("Train_", data_type, ".csv"))) %>%
+    mutate(Watershed = as.factor(Watershed))
+  test_data <- read.csv(file.path(train_test_dir, paste0("Test_", data_type, ".csv"))) %>%
     mutate(Watershed = as.factor(Watershed))
   
-  return(data)
-}
-
-# Function to train and evaluate Random Forest model
-train_evaluate_rf <- function(train_data, test_data, data_type) {
-  
-  # Simple Random Forest model
-  rf_model <- rand_forest(trees = 500) %>%
-    set_engine("ranger") %>%
-    set_mode("classification")
-  
-  # Simple recipe
-  rf_recipe <- recipe(Watershed ~ ., data = train_data) %>%
-    update_role(c(Fish_id, Year, Natal_Iso), new_role = "ID")
-  
-  # Create and fit workflow
-  rf_workflow <- workflow() %>%
-    add_recipe(rf_recipe) %>%
-    add_model(rf_model) %>%
-    fit(train_data)
-  
-  # Make predictions
-  rf_predictions <- rf_workflow %>%
-    predict(test_data) %>%
-    bind_cols(test_data %>% select(Watershed))
-  
-  # Calculate overall accuracy
-  rf_accuracy <- mean(rf_predictions$Watershed == rf_predictions$.pred_class)
-  
-  # Confusion matrix
-  rf_conf_mat <- conf_mat(rf_predictions, truth = Watershed, estimate = .pred_class)
-  
-  # Class-specific metrics
-  precision_metric <- rf_predictions %>%
-    precision(truth = Watershed, estimate = .pred_class, estimator = "macro")
-  
-  recall_metric <- rf_predictions %>%
-    recall(truth = Watershed, estimate = .pred_class, estimator = "macro")
-  
-  f1_metric <- rf_predictions %>%
-    f_meas(truth = Watershed, estimate = .pred_class, estimator = "macro")
-  
-  # Calculate class-specific accuracy
-  class_specific_accuracy <- rf_predictions %>%
-    mutate(correct = .pred_class == Watershed) %>%
-    group_by(Watershed) %>%
-    summarise(
-      n = n(),
-      correct = sum(correct),
-      accuracy = correct / n,
-      .groups = "drop"
-    )
-  
-  # Return results
-  list(
-    data_type = data_type,
-    overall_accuracy = rf_accuracy,
-    confusion_matrix = rf_conf_mat,
-    precision = precision_metric$.estimate,
-    recall = recall_metric$.estimate,
-    f1_score = f1_metric$.estimate,
-    class_accuracy = class_specific_accuracy,
-    predictions = rf_predictions,
-    model = rf_workflow
-  )
-}
-
-# Function to train multiple model types
-train_multiple_models <- function(train_data, test_data, data_type) {
-  
-  # Prepare recipe (common for all models)
+  # Create recipe
   base_recipe <- recipe(Watershed ~ ., data = train_data) %>%
-    update_role(c(Fish_id, Year, Natal_Iso), new_role = "ID") %>%
-    step_normalize(all_predictors(), -all_nominal())
+    step_normalize(all_predictors())
   
   # Define models
   models <- list(
-    rf = rand_forest(trees = 500) %>%
-      set_engine("ranger") %>%
-      set_mode("classification"),
-    
-    svm = svm_rbf() %>%
-      set_engine("kernlab") %>%
-      set_mode("classification"),
-    
-    knn = nearest_neighbor(neighbors = 5) %>%
-      set_engine("kknn") %>%
-      set_mode("classification")
+    RF = rand_forest(trees = 500) %>% set_engine("ranger") %>% set_mode("classification"),
+    SVM = svm_rbf() %>% set_engine("kernlab") %>% set_mode("classification"),
+    KNN = nearest_neighbor(neighbors = 5) %>% set_engine("kknn") %>% set_mode("classification")
   )
   
-  results <- list()
-  
+  # Train and evaluate each model
   for (model_name in names(models)) {
-    cat(paste("Training", model_name, "for", data_type, "data...\n"))
     
-    # Create and fit workflow
+    # Fit model
     workflow_obj <- workflow() %>%
       add_recipe(base_recipe) %>%
       add_model(models[[model_name]]) %>%
@@ -126,232 +139,91 @@ train_multiple_models <- function(train_data, test_data, data_type) {
     
     # Calculate metrics
     accuracy <- mean(predictions$Watershed == predictions$.pred_class)
+    f1_score <- predictions %>%
+      f_meas(truth = Watershed, estimate = .pred_class) %>%
+      pull(.estimate)
     
-    # Class-specific accuracy
-    class_accuracy <- predictions %>%
-      mutate(correct = .pred_class == Watershed) %>%
-      group_by(Watershed) %>%
-      summarise(
-        n = n(),
-        correct = sum(correct),
-        accuracy = correct / n,
-        .groups = "drop"
-      )
-    
-    results[[model_name]] <- list(
-      model_type = model_name,
-      data_type = data_type,
-      overall_accuracy = accuracy,
-      class_accuracy = class_accuracy,
-      predictions = predictions,
-      model = workflow_obj
-    )
-  }
-  
-  return(results)
-}
-
-#######################################################################################################################################################################################
-##### MAIN ANALYSIS
-#######################################################################################################################################################################################
-
-# Set seed for reproducibility
-set.seed(123)
-
-# Updated data types to compare - all requested types
-data_types <- c("RAW", "GAM", "MA", "Sr88", "Combined")
-
-# Create descriptive names for results
-data_type_names <- list(
-  "RAW" = "Sr87/86 Raw",
-  "GAM" = "Sr87/86 GAM",
-  "MA" = "Sr87/86 Moving Average", 
-  "Sr88" = "Sr88 Corrected",
-  "Combined" = "Combined (Sr87/86 Raw + Sr88)"
-)
-
-# Load all data types
-all_data <- list()
-for (data_type in data_types) {
-  cat(paste("Loading", data_type_names[[data_type]], "data...\n"))
-  all_data[[data_type]] <- load_data(data_type)
-  
-  if (is.null(all_data[[data_type]])) {
-    cat(paste("Skipping", data_type, "due to loading error\n"))
-    next
-  }
-  
-  cat(paste("Loaded", nrow(all_data[[data_type]]), "samples for", data_type_names[[data_type]], "\n"))
-  
-  # Check for any rows with all NA predictors
-  predictor_cols <- all_data[[data_type]] %>% 
-    select(-Fish_id, -Watershed, -Year, -Natal_Iso, -starts_with("Natal"), -starts_with("Marine"), -Original_Data_Points, -Interpolated_Points)
-  
-  rows_with_all_na <- rowSums(is.na(predictor_cols)) == ncol(predictor_cols)
-  if (any(rows_with_all_na)) {
-    cat(paste("Warning: Found", sum(rows_with_all_na), "rows with all NA predictors in", data_type, "- removing them\n"))
-    all_data[[data_type]] <- all_data[[data_type]][!rows_with_all_na, ]
-  }
-}
-
-# Remove any NULL entries
-all_data <- all_data[!sapply(all_data, is.null)]
-
-if (length(all_data) == 0) {
-  stop("No data files could be loaded. Please check file paths.")
-}
-
-# Check that all datasets have the same Fish_id values for consistent splitting
-fish_ids <- lapply(all_data, function(x) x$Fish_id)
-common_fish_ids <- Reduce(intersect, fish_ids)
-
-if (length(common_fish_ids) < length(fish_ids[[1]])) {
-  cat("Warning: Not all datasets have the same fish IDs. Using common fish IDs for consistent splitting.\n")
-  cat(paste("Common fish IDs:", length(common_fish_ids), "\n"))
-  
-  # Filter all datasets to common fish IDs
-  for (data_type in names(all_data)) {
-    all_data[[data_type]] <- all_data[[data_type]] %>%
-      filter(Fish_id %in% common_fish_ids)
-  }
-}
-
-# Use the first available dataset to determine train/test split based on Fish_id
-reference_data <- all_data[[1]]
-unique_fish_ids <- unique(reference_data$Fish_id)
-train_fish_ids <- sample(unique_fish_ids, size = 0.8 * length(unique_fish_ids))
-test_fish_ids <- setdiff(unique_fish_ids, train_fish_ids)
-
-cat(paste("Train/test split:", length(train_fish_ids), "training fish,", length(test_fish_ids), "testing fish\n"))
-
-
-#######################################################################################################################################################################################
-##### MULTIPLE MODEL COMPARISON
-#######################################################################################################################################################################################
-
-cat("\n=== MULTIPLE MODEL COMPARISON ===\n")
-
-all_model_results <- list()
-
-for (data_type in names(all_data)) {
-  cat(paste("\nTraining multiple models for", data_type_names[[data_type]], "...\n"))
-  
-  # Split data by Fish_id
-  train_data <- all_data[[data_type]][all_data[[data_type]]$Fish_id %in% train_fish_ids, ]
-  test_data <- all_data[[data_type]][all_data[[data_type]]$Fish_id %in% test_fish_ids, ]
-  
-  # Train multiple models
-  all_model_results[[data_type]] <- train_multiple_models(train_data, test_data, data_type_names[[data_type]])
-  
-  # Print results summary
-  for (model_name in names(all_model_results[[data_type]])) {
-    accuracy <- all_model_results[[data_type]][[model_name]]$overall_accuracy
-    cat(paste(model_name, "accuracy for", data_type_names[[data_type]], ":", round(accuracy, 3), "\n"))
-  }
-}
-
-#######################################################################################################################################################################################
-##### RESULTS SUMMARY
-#######################################################################################################################################################################################
-
-cat("\n=== RESULTS SUMMARY ===\n")
-
-# Create comprehensive summary table
-summary_results <- data.frame()
-
-for (data_type in names(all_model_results)) {
-  for (model_name in names(all_model_results[[data_type]])) {
-    result <- all_model_results[[data_type]][[model_name]]
-    
-    summary_results <- rbind(summary_results, data.frame(
-      Data_Type = data_type_names[[data_type]],
+    # Store results
+    results <- rbind(results, data.frame(
+      Dataset = data_type,
       Model = model_name,
-      Overall_Accuracy = result$overall_accuracy,
-      stringsAsFactors = FALSE
+      Accuracy = round(accuracy, 3),
+      F1_Score = round(f1_score, 3)
     ))
   }
 }
 
-# Sort by accuracy (descending)
-summary_results <- summary_results[order(-summary_results$Overall_Accuracy), ]
+# Display results sorted by accuracy
+results <- results[order(-results$Accuracy), ]
+print(results)
 
-# Print summary table
-cat("\nPerformance Summary (sorted by accuracy):\n")
-print(summary_results, row.names = FALSE)
+################################################################################
+###### Step 3: Visualize 
+################################################################################
 
-# Find best performing combination
-best_combination <- summary_results[1, ]
-cat(paste("\nBest performing combination:", 
-          best_combination$Data_Type, "+", best_combination$Model, 
-          "with accuracy:", round(best_combination$Overall_Accuracy, 3), "\n"))
+# Load required libraries
+library(ggplot2)
+library(dplyr)
+library(viridis)
 
-# Create a performance comparison by data type
-cat("\n=== PERFORMANCE BY DATA TYPE ===\n")
-data_type_summary <- summary_results %>%
-  group_by(Data_Type) %>%
-  summarise(
-    Best_Model = Model[which.max(Overall_Accuracy)],
-    Best_Accuracy = max(Overall_Accuracy),
-    Mean_Accuracy = mean(Overall_Accuracy),
-    .groups = "drop"
-  ) %>%
-  arrange(-Best_Accuracy)
-
-print(data_type_summary, row.names = FALSE)
-
-# Create a performance comparison by model type
-cat("\n=== PERFORMANCE BY MODEL TYPE ===\n")
-model_type_summary <- summary_results %>%
-  group_by(Model) %>%
-  summarise(
-    Best_Data_Type = Data_Type[which.max(Overall_Accuracy)],
-    Best_Accuracy = max(Overall_Accuracy),
-    Mean_Accuracy = mean(Overall_Accuracy),
-    .groups = "drop"
-  ) %>%
-  arrange(-Best_Accuracy)
-
-print(model_type_summary, row.names = FALSE)
-
-#######################################################################################################################################################################################
-##### DETAILED CLASS-SPECIFIC PERFORMANCE
-#######################################################################################################################################################################################
-
-cat("\n=== CLASS-SPECIFIC PERFORMANCE FOR BEST MODEL ===\n")
-
-best_data_type <- names(data_type_names)[data_type_names == best_combination$Data_Type]
-best_model_name <- best_combination$Model
-
-if (best_data_type %in% names(all_model_results) && 
-    best_model_name %in% names(all_model_results[[best_data_type]])) {
-  
-  best_class_accuracy <- all_model_results[[best_data_type]][[best_model_name]]$class_accuracy
-  
-  cat(paste("Class-specific accuracy for", best_combination$Data_Type, "+", best_combination$Model, ":\n"))
-  print(best_class_accuracy, row.names = FALSE)
-  
-  # Calculate additional metrics
-  best_predictions <- all_model_results[[best_data_type]][[best_model_name]]$predictions
-  
-  cat("\nConfusion Matrix:\n")
-  conf_matrix <- table(Predicted = best_predictions$.pred_class, Actual = best_predictions$Watershed)
-  print(conf_matrix)
-  
-  # Calculate precision, recall, F1 for each class
-  cat("\nPer-class metrics:\n")
-  class_metrics <- best_predictions %>%
-    group_by(Watershed) %>%
-    summarise(
-      n_actual = n(),
-      n_predicted = sum(best_predictions$.pred_class == Watershed),
-      true_positive = sum(.pred_class == Watershed & Watershed == Watershed),
-      .groups = "drop"
-    ) %>%
-    mutate(
-      precision = true_positive / pmax(n_predicted, 1),
-      recall = true_positive / n_actual,
-      f1_score = 2 * (precision * recall) / pmax(precision + recall, 1e-10)
-    )
-  
-  print(class_metrics, row.names = FALSE)
+# Create output directory
+figures_dir <- "/Users/benjaminmakhlouf/Research_repos/04_Western_Ak_otolith_stock_discrimination/Figures"
+if (!dir.exists(figures_dir)) {
+  dir.create(figures_dir, recursive = TRUE)
 }
+
+# Clean dataset labels
+results_clean <- results %>%
+  mutate(
+    Dataset_Label = case_when(
+      Dataset == "RAW" ~ "Sr87/86 Raw",
+      Dataset == "GAM" ~ "Sr87/86 GAM", 
+      Dataset == "MA" ~ "Sr87/86 Moving Average",
+      Dataset == "Sr88" ~ "Sr88",
+      Dataset == "Combined" ~ "Combined Sr88 + Sr87/86"
+    )
+  )
+
+# Professional theme
+theme_clean <- theme_minimal() +
+  theme(
+    plot.title = element_text(size = 14, face = "bold", hjust = 0.5),
+    axis.title = element_text(size = 12, face = "bold"),
+    axis.text = element_text(size = 11),
+    legend.title = element_text(size = 11, face = "bold"),
+    panel.grid = element_blank(),
+    panel.border = element_rect(color = "black", fill = NA)
+  )
+
+# Create ranking for highlighting top 3
+results_clean <- results_clean %>%
+  mutate(
+    Accuracy_Rank = rank(-Accuracy, ties.method = "min"),
+    F1_Rank = rank(-F1_Score, ties.method = "min"),
+    Top3_Accuracy = ifelse(Accuracy_Rank <= 3, "Top 3", "Other"),
+    Top3_F1 = ifelse(F1_Rank <= 3, "Top 3", "Other")
+  )
+
+# Accuracy heatmap
+accuracy_plot <- ggplot(results_clean, aes(x = Model, y = Dataset_Label, fill = Top3_Accuracy)) +
+  geom_tile(color = "black", size = 1) +
+  geom_text(aes(label = sprintf("%.3f", Accuracy)), color = "black", size = 4, fontface = "bold") +
+  scale_fill_manual(name = "Performance", values = c("Top 3" = "lightgreen", "Other" = "white")) +
+  labs(title = "Model Accuracy", x = "Model", y = "Dataset") +
+  theme_clean
+
+# F1-Score heatmap  
+f1_plot <- ggplot(results_clean, aes(x = Model, y = Dataset_Label, fill = Top3_F1)) +
+  geom_tile(color = "black", size = 1) +
+  geom_text(aes(label = sprintf("%.3f", F1_Score)), color = "black", size = 4, fontface = "bold") +
+  scale_fill_manual(name = "Performance", values = c("Top 3" = "lightgreen", "Other" = "white")) +
+  labs(title = "Model F1-Score", x = "Model", y = "Dataset") +
+  theme_clean
+
+# Save plots
+ggsave(file.path(figures_dir, "Model_Accuracy_Heatmap.png"), accuracy_plot, 
+       width = 8, height = 5, dpi = 300, bg = "white")
+ggsave(file.path(figures_dir, "Model_F1Score_Heatmap.png"), f1_plot, 
+       width = 8, height = 5, dpi = 300, bg = "white")
+
+cat("Heatmaps saved to:", figures_dir, "\n")

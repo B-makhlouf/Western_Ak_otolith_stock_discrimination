@@ -88,8 +88,11 @@ process_analysis_ready_data <- function(window_size = 40, gamma_value = 1.2, mar
       return(NULL)
     }
     
-    # Filter data
+    # Calculate micron size (total span of selected region)
     marine_end <- marine_start + marine_extension
+    micron_size <- marine_end - natal_start
+    
+    # Filter data
     ind_data_filtered <- ind_data %>% 
       filter(Microns >= natal_start & Microns <= marine_end) %>%
       arrange(Microns)
@@ -212,6 +215,7 @@ process_analysis_ready_data <- function(window_size = 40, gamma_value = 1.2, mar
       Natal_Start = natal_start,
       Marine_Start = marine_start,
       Marine_End = marine_end,
+      Micron_Size = micron_size,  # NEW FIELD: Total micron span
       Original_Data_Points = nrow(ind_data_filtered),
       Interpolated_Points = average_length,
       Iso_Raw = iso_interpolated,
@@ -238,7 +242,7 @@ process_analysis_ready_data <- function(window_size = 40, gamma_value = 1.2, mar
   sr88_raw_array <- do.call(rbind, lapply(results_list, `[[`, "Sr88_Raw"))
   sr88_corrected_array <- do.call(rbind, lapply(results_list, `[[`, "Sr88_Corrected"))
   
-  # Create metadata
+  # Create metadata (with Micron_Size as LAST field for modeling)
   metadata <- data.frame(
     Fish_id = sapply(results_list, `[[`, "Fish_id"),
     Watershed = sapply(results_list, `[[`, "Watershed"),
@@ -249,6 +253,7 @@ process_analysis_ready_data <- function(window_size = 40, gamma_value = 1.2, mar
     Marine_End = sapply(results_list, `[[`, "Marine_End"),
     Original_Data_Points = sapply(results_list, `[[`, "Original_Data_Points"),
     Interpolated_Points = sapply(results_list, `[[`, "Interpolated_Points"),
+    Micron_Size = sapply(results_list, `[[`, "Micron_Size"),  # LAST FIELD - included as feature
     stringsAsFactors = FALSE
   )
   
@@ -336,6 +341,13 @@ print_summary <- function(results_list, metadata, average_length, marine_extensi
   cat("Average original time series length:", round(mean(metadata$Original_Data_Points), 1), "\n")
   cat("Interpolation points used:", average_length, "\n")
   cat("Marine extension:", marine_extension, "microns\n")
+  
+  # NEW: Summary of micron sizes
+  cat("Micron size statistics:\n")
+  cat("  Mean micron size:", round(mean(metadata$Micron_Size), 1), "microns\n")
+  cat("  Median micron size:", round(median(metadata$Micron_Size), 1), "microns\n")
+  cat("  Range:", round(min(metadata$Micron_Size), 1), "to", round(max(metadata$Micron_Size), 1), "microns\n")
+  
   cat("Watershed distribution:\n")
   print(table(metadata$Watershed))
   cat("Original data points range:", min(metadata$Original_Data_Points), "to", max(metadata$Original_Data_Points), "\n")
@@ -366,7 +378,7 @@ validate_processed_data <- function(processed_data) {
   metadata <- processed_data$metadata
   cat("Metadata columns:", ncol(metadata), "\n")
   cat("Required columns present:", 
-      all(c("Fish_id", "Watershed", "Natal_Start", "Marine_Start") %in% colnames(metadata)), "\n")
+      all(c("Fish_id", "Watershed", "Natal_Start", "Marine_Start", "Micron_Size") %in% colnames(metadata)), "\n")
   
   iso_na_prop <- mean(is.na(processed_data$iso_gam_smoothed_array))
   sr88_na_prop <- mean(is.na(processed_data$sr88_corrected_array))
@@ -376,6 +388,17 @@ validate_processed_data <- function(processed_data) {
   
   cat("Array dimensions consistent:", 
       nrow(processed_data$iso_gam_smoothed_array) == nrow(metadata), "\n")
+  
+  # NEW: Validate micron size calculations
+  if ("Micron_Size" %in% colnames(metadata)) {
+    calculated_sizes <- metadata$Marine_End - metadata$Natal_Start
+    size_check <- all.equal(metadata$Micron_Size, calculated_sizes, tolerance = 1e-10)
+    cat("Micron size calculations valid:", isTRUE(size_check), "\n")
+    
+    if (!isTRUE(size_check)) {
+      cat("WARNING: Micron size calculation mismatch detected!\n")
+    }
+  }
   
   if ("processing_info" %in% names(processed_data)) {
     cat("Average length used for interpolation:", processed_data$processing_info$average_length, "\n")
