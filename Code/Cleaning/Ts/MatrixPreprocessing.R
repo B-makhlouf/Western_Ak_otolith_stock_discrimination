@@ -23,7 +23,7 @@ library(here)
 # Returns:
 # - A list containing processed measurement arrays, moving average arrays, GAM smoothed arrays, metadata, and fish IDs.
 
-process_analysis_ready_data <- function(window_size = 60, gamma_value = 1.4, marine_extension = 200) {     
+process_analysis_ready_data <- function(window_size = 40, gamma_value = 1.2, marine_extension = 0) {     
   
   # Update data directory to AnalysisReady folder
   data_directory <- "/Users/benjaminmakhlouf/Research_repos/04_Western_Ak_otolith_stock_discrimination/data/LA_Data/AnalysisReady"   
