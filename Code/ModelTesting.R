@@ -2,6 +2,17 @@
 library(here)
 library(dplyr)
 
+################################################################################
+#### CONFIGURATION - Set filter toggle here
+################################################################################
+
+# Set this to TRUE to filter for natal_iso < 0.713, FALSE for original analysis
+FILTER_NATAL_ISO <- TRUE  # Change to TRUE to apply natal_iso filter
+
+# Filter threshold (only used when FILTER_NATAL_ISO = TRUE)
+NATAL_ISO_THRESHOLD <- 0.713
+
+################################################################################
 ########## STEP 1 
 ################################################################################
 #### Create test/train splits from each of the datasets, keeping the same fishIDs
@@ -14,12 +25,30 @@ data_types <- c("RAW", "GAM", "MA", "Sr88", "Combined")
 
 # Define paths
 base_data_path <- "/Users/benjaminmakhlouf/Research_repos/04_Western_Ak_otolith_stock_discrimination/data/LA_Data/Preprocessed_ts_matrices"
-train_test_dir <- "/Users/benjaminmakhlouf/Research_repos/04_Western_Ak_otolith_stock_discrimination/data/LA_Data/Train_Test"
+
+# Create different output directories based on filter setting
+if (FILTER_NATAL_ISO) {
+  train_test_dir <- "/Users/benjaminmakhlouf/Research_repos/04_Western_Ak_otolith_stock_discrimination/data/LA_Data/Train_Test_Filtered"
+  figures_dir <- "/Users/benjaminmakhlouf/Research_repos/04_Western_Ak_otolith_stock_discrimination/Figures_Filtered"
+  models_dir <- "/Users/benjaminmakhlouf/Research_repos/04_Western_Ak_otolith_stock_discrimination/data/Models/Filtered"
+  cat("RUNNING WITH NATAL_ISO FILTER: natal_iso <", NATAL_ISO_THRESHOLD, "\n")
+} else {
+  train_test_dir <- "/Users/benjaminmakhlouf/Research_repos/04_Western_Ak_otolith_stock_discrimination/data/LA_Data/Train_Test"
+  figures_dir <- "/Users/benjaminmakhlouf/Research_repos/04_Western_Ak_otolith_stock_discrimination/Figures"
+  models_dir <- "/Users/benjaminmakhlouf/Research_repos/04_Western_Ak_otolith_stock_discrimination/data/Models"
+  cat("RUNNING WITHOUT NATAL_ISO FILTER (original analysis)\n")
+}
 
 # Create output directory if it doesn't exist
 if (!dir.exists(train_test_dir)) {
   dir.create(train_test_dir, recursive = TRUE)
   cat("Created directory:", train_test_dir, "\n")
+}
+
+# Create models directory if it doesn't exist
+if (!dir.exists(models_dir)) {
+  dir.create(models_dir, recursive = TRUE)
+  cat("Created directory:", models_dir, "\n")
 }
 
 # Define metadata columns to exclude from modeling
@@ -32,9 +61,20 @@ for (data_type in data_types) {
   file_path <- file.path(base_data_path, paste0("NatalToMarine_Processed_", data_type, ".csv"))
   
   if (file.exists(file_path)) {
-    all_data[[data_type]] <- read.csv(file_path) %>%
+    data <- read.csv(file_path) %>%
       mutate(Watershed = as.factor(Watershed))
-    cat(paste("Loaded", data_type, ":", nrow(all_data[[data_type]]), "samples\n"))
+    
+    # Apply natal_iso filter if enabled
+    if (FILTER_NATAL_ISO) {
+      original_count <- nrow(data)
+      data <- data %>% filter(Natal_Iso < NATAL_ISO_THRESHOLD)
+      filtered_count <- nrow(data)
+      cat(paste("Loaded", data_type, ":", original_count, "samples ->", filtered_count, "after natal_iso filter\n"))
+    } else {
+      cat(paste("Loaded", data_type, ":", nrow(data), "samples\n"))
+    }
+    
+    all_data[[data_type]] <- data
   } else {
     cat(paste("File not found:", file_path, "\n"))
   }
@@ -98,7 +138,6 @@ set.seed(123)
 
 # Define data types and models
 data_types <- c("RAW", "GAM", "MA", "Sr88", "Combined")
-train_test_dir <- "/Users/benjaminmakhlouf/Research_repos/04_Western_Ak_otolith_stock_discrimination/data/LA_Data/Train_Test"
 
 # Create results data frame
 results <- data.frame()
@@ -131,6 +170,12 @@ for (data_type in data_types) {
       add_recipe(base_recipe) %>%
       add_model(models[[model_name]]) %>%
       fit(train_data)
+    
+    # Save the trained model as RDS
+    model_filename <- paste0(data_type, "_", model_name, "_model.rds")
+    model_filepath <- file.path(models_dir, model_filename)
+    saveRDS(workflow_obj, model_filepath)
+    cat(paste("Saved model:", model_filename, "\n"))
     
     # Make predictions
     predictions <- workflow_obj %>%
@@ -167,7 +212,6 @@ library(dplyr)
 library(viridis)
 
 # Create output directory
-figures_dir <- "/Users/benjaminmakhlouf/Research_repos/04_Western_Ak_otolith_stock_discrimination/Figures"
 if (!dir.exists(figures_dir)) {
   dir.create(figures_dir, recursive = TRUE)
 }
@@ -204,12 +248,15 @@ results_clean <- results_clean %>%
     Top3_F1 = ifelse(F1_Rank <= 3, "Top 3", "Other")
   )
 
+# Add filter status to plot titles
+filter_suffix <- if (FILTER_NATAL_ISO) paste0(" (Natal_Iso < ", NATAL_ISO_THRESHOLD, ")") else ""
+
 # Accuracy heatmap
 accuracy_plot <- ggplot(results_clean, aes(x = Model, y = Dataset_Label, fill = Top3_Accuracy)) +
   geom_tile(color = "black", size = 1) +
   geom_text(aes(label = sprintf("%.3f", Accuracy)), color = "black", size = 4, fontface = "bold") +
   scale_fill_manual(name = "Performance", values = c("Top 3" = "lightgreen", "Other" = "white")) +
-  labs(title = "Model Accuracy", x = "Model", y = "Dataset") +
+  labs(title = paste0("Model Accuracy", filter_suffix), x = "Model", y = "Dataset") +
   theme_clean
 
 # F1-Score heatmap  
@@ -217,7 +264,7 @@ f1_plot <- ggplot(results_clean, aes(x = Model, y = Dataset_Label, fill = Top3_F
   geom_tile(color = "black", size = 1) +
   geom_text(aes(label = sprintf("%.3f", F1_Score)), color = "black", size = 4, fontface = "bold") +
   scale_fill_manual(name = "Performance", values = c("Top 3" = "lightgreen", "Other" = "white")) +
-  labs(title = "Model F1-Score", x = "Model", y = "Dataset") +
+  labs(title = paste0("Model F1-Score", filter_suffix), x = "Model", y = "Dataset") +
   theme_clean
 
 # Save plots
@@ -227,3 +274,16 @@ ggsave(file.path(figures_dir, "Model_F1Score_Heatmap.png"), f1_plot,
        width = 8, height = 5, dpi = 300, bg = "white")
 
 cat("Heatmaps saved to:", figures_dir, "\n")
+
+cat("\n", rep("=", 50), "\n")
+cat("ANALYSIS SUMMARY\n")
+cat(rep("=", 50), "\n")
+if (FILTER_NATAL_ISO) {
+  cat("Filter applied: natal_iso <", NATAL_ISO_THRESHOLD, "\n")
+} else {
+  cat("No filter applied (original analysis)\n")
+}
+cat("Results saved to:", train_test_dir, "\n")
+cat("Models saved to:", models_dir, "\n")
+cat("Figures saved to:", figures_dir, "\n")
+cat(rep("=", 50), "\n")
