@@ -15,7 +15,7 @@ library(tidyverse)
 library(here)
 
 # Main processing function
-process_analysis_ready_data <- function(window_size = 40, gamma_value = 1.2, marine_extension = 100 ) {
+process_analysis_ready_data <- function(window_size = 60, gamma_value = 1.2, marine_extension = 300 ) {
   
   # Set data directory
   data_directory <- "/Users/benjaminmakhlouf/Research_repos/04_Western_Ak_otolith_stock_discrimination/data/LA_Data/AnalysisReady"

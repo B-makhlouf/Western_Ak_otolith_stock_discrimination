@@ -8,6 +8,7 @@ library(kknn)
 library(ggplot2)
 library(viridis)
 
+
 ################################################################################
 #### CONFIGURATION
 ################################################################################
@@ -38,8 +39,8 @@ dir.create(models_dir_total, recursive = TRUE, showWarnings = FALSE)
 dir.create(models_dir_overlap, recursive = TRUE, showWarnings = FALSE)
 
 # Define metadata columns to exclude from modeling
-metadata_columns <- c("Fish_id", "Year", "Natal_Iso", "Natal_Start", "Marine_Start", 
-                      "Marine_End", "Original_Data_Points", "Interpolated_Points")
+metadata_columns <- c("Fish_id", "Year", "Natal_Start", "Marine_Start", 
+                      "Marine_End", "Interpolated_Points", "Micron_Size", "Natal_Iso","Original_Data_Points")
 
 ################################################################################
 #### STEP 1: Create train/test splits and datasets
