@@ -171,6 +171,16 @@ ui <- dashboardPage(
                                  display_pct = TRUE
                                )
                            ),
+                           # Quick Jump to Fish ID
+                           div(style = "margin: 10px 0; padding: 8px; background-color: #e8f4f8; border-radius: 3px;",
+                               h6("🎯 Quick Jump:", style = "margin: 0 0 5px 0; font-weight: bold;"),
+                               selectInput("jump_to_fish", NULL, 
+                                           choices = setNames(1:length(remaining_files), remaining_ids),
+                                           selected = 1, width = "100%"),
+                               actionButton("jump_btn", "Jump to Sample", 
+                                            class = "btn btn-info btn-sm", 
+                                            style = "width: 100%; font-size: 12px;")
+                           ),
                            div(style = "text-align: center; margin-top: 15px;",
                                actionButton("prev_btn", "← Previous", class = "btn btn-secondary", style = "width: 100%; margin-bottom: 10px;"),
                                actionButton("next_btn", "Next →", class = "btn btn-primary", style = "width: 100%;")
@@ -302,7 +312,8 @@ server <- function(input, output, session) {
     core_start = NULL,
     selection_mode = "none", # "natal_start", "natal_end", "marine_start"
     corrections_log = existing_corrections,
-    changes_made = FALSE
+    changes_made = FALSE,
+    jump_target = NULL
   )
   
   # Load current sample data
@@ -311,6 +322,9 @@ server <- function(input, output, session) {
       file_path <- remaining_files[values$current_index]
       values$current_data <- read_csv(file_path, show_col_types = FALSE)
       values$current_fish_id <- values$current_data$Fish_id[1]
+      
+      # Update the jump selector to reflect current sample
+      updateSelectInput(session, "jump_to_fish", selected = values$current_index)
       
       # Store original landmarks
       values$original_natal_start <- values$current_data$natal_microns_start[1]
@@ -607,6 +621,31 @@ server <- function(input, output, session) {
     }
   })
   
+  # Jump to specific fish handler
+  observeEvent(input$jump_btn, {
+    target_index <- as.numeric(input$jump_to_fish)
+    if (!is.na(target_index) && target_index >= 1 && target_index <= length(remaining_files)) {
+      if (values$changes_made) {
+        # Show confirmation dialog if there are unsaved changes
+        showModal(modalDialog(
+          title = "Unsaved Changes",
+          paste("You have unsaved changes. Do you want to save them before jumping to", remaining_ids[target_index], "?"),
+          footer = tagList(
+            actionButton("save_and_jump", "Save & Jump", class = "btn-success"),
+            actionButton("discard_and_jump", "Discard & Jump", class = "btn-warning"),
+            modalButton("Cancel")
+          )
+        ))
+        # Store target for later use
+        values$jump_target <- target_index
+      } else {
+        # No unsaved changes, jump directly
+        values$current_index <- target_index
+        showNotification(paste("Jumped to", remaining_ids[target_index]), type = "message", duration = 2)
+      }
+    }
+  })
+  
   # Save corrections function
   save_current_corrections <- function() {
     if (!is.null(values$current_fish_id)) {
@@ -885,6 +924,31 @@ server <- function(input, output, session) {
     removeModal()
     if (values$current_index > 1) {
       values$current_index <- values$current_index - 1
+    }
+  })
+  
+  # Jump dialog handlers
+  observeEvent(input$save_and_jump, {
+    save_current_corrections()
+    removeModal()
+    if (!is.null(values$jump_target)) {
+      values$current_index <- values$jump_target
+      showNotification(paste("Jumped to", remaining_ids[values$jump_target]), type = "message", duration = 2)
+      values$jump_target <- NULL
+    }
+  })
+  
+  observeEvent(input$discard_and_jump, {
+    values$changes_made <- FALSE
+    # Reset selected values to original
+    values$selected_natal_start <- values$original_natal_start
+    values$selected_natal_end <- values$original_natal_end
+    values$selected_marine_start <- values$original_marine_start
+    removeModal()
+    if (!is.null(values$jump_target)) {
+      values$current_index <- values$jump_target
+      showNotification(paste("Jumped to", remaining_ids[values$jump_target]), type = "message", duration = 2)
+      values$jump_target <- NULL
     }
   })
   
