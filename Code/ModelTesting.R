@@ -5,9 +5,6 @@ library(tidymodels)
 library(ranger)
 library(kernlab)
 library(kknn)
-library(ggplot2)
-library(viridis)
-
 
 ################################################################################
 #### CONFIGURATION
@@ -24,11 +21,10 @@ data_types <- c("RAW", "GAM", "MA", "Sr88", "Combined")
 
 # Define paths
 base_data_path <- "/Users/benjaminmakhlouf/Research_repos/04_Western_Ak_otolith_stock_discrimination/data/LA_Data/Preprocessed_ts_matrices"
-figures_dir <- "/Users/benjaminmakhlouf/Research_repos/04_Western_Ak_otolith_stock_discrimination/Figures"
 
-# Output directories
-train_test_dir_total <- "/Users/benjaminmakhlouf/Research_repos/04_Western_Ak_otolith_stock_discrimination/data/LA_Data/Train_Test"
-train_test_dir_overlap <- "/Users/benjaminmakhlouf/Research_repos/04_Western_Ak_otolith_stock_discrimination/data/LA_Data/Train_Test_Filtered"
+# Output directories - updated path
+train_test_dir_total <- "/Users/benjaminmakhlouf/Research_repos/04_Western_Ak_otolith_stock_discrimination/data/LA_Data/TrainingTesting"
+train_test_dir_overlap <- "/Users/benjaminmakhlouf/Research_repos/04_Western_Ak_otolith_stock_discrimination/data/LA_Data/TrainingTesting/Filtered"
 models_dir_total <- "/Users/benjaminmakhlouf/Research_repos/04_Western_Ak_otolith_stock_discrimination/data/Models"
 models_dir_overlap <- "/Users/benjaminmakhlouf/Research_repos/04_Western_Ak_otolith_stock_discrimination/data/Models/Filtered"
 
@@ -200,72 +196,6 @@ run_analysis <- function(train_test_dir, models_dir, analysis_name) {
   cat("\n=== Results for", analysis_name, "analysis ===\n")
   print(results)
   
-  ################################################################################
-  #### Visualize
-  ################################################################################
-  
-  # Clean dataset labels
-  results_clean <- results %>%
-    mutate(
-      Dataset_Label = case_when(
-        Dataset == "RAW" ~ "Sr87/86 Raw",
-        Dataset == "GAM" ~ "Sr87/86 GAM", 
-        Dataset == "MA" ~ "Sr87/86 Moving Average",
-        Dataset == "Sr88" ~ "Sr88",
-        Dataset == "Combined" ~ "Combined Sr88 + Sr87/86"
-      )
-    )
-  
-  # Professional theme
-  theme_clean <- theme_minimal() +
-    theme(
-      plot.title = element_text(size = 14, face = "bold", hjust = 0.5),
-      axis.title = element_text(size = 12, face = "bold"),
-      axis.text = element_text(size = 11),
-      legend.title = element_text(size = 11, face = "bold"),
-      panel.grid = element_blank(),
-      panel.border = element_rect(color = "black", fill = NA)
-    )
-  
-  # Create ranking for highlighting top 3
-  results_clean <- results_clean %>%
-    mutate(
-      Accuracy_Rank = rank(-Accuracy, ties.method = "min"),
-      F1_Rank = rank(-F1_Score, ties.method = "min"),
-      Top3_Accuracy = ifelse(Accuracy_Rank <= 3, "Top 3", "Other"),
-      Top3_F1 = ifelse(F1_Rank <= 3, "Top 3", "Other")
-    )
-  
-  # Add analysis type to plot titles
-  test_suffix <- if (analysis_name == "OVERLAP") paste0(" (Test: Natal_Iso < ", NATAL_ISO_THRESHOLD, ")") else " (Test: Full Dataset)"
-  
-  # Accuracy heatmap
-  accuracy_plot <- ggplot(results_clean, aes(x = Model, y = Dataset_Label, fill = Top3_Accuracy)) +
-    geom_tile(color = "black", size = 1) +
-    geom_text(aes(label = sprintf("%.3f", Accuracy)), color = "black", size = 4, fontface = "bold") +
-    scale_fill_manual(name = "Performance", values = c("Top 3" = "lightgreen", "Other" = "white")) +
-    labs(title = paste0("Model Accuracy", test_suffix), x = "Model", y = "Dataset") +
-    theme_clean
-  
-  # F1-Score heatmap  
-  f1_plot <- ggplot(results_clean, aes(x = Model, y = Dataset_Label, fill = Top3_F1)) +
-    geom_tile(color = "black", size = 1) +
-    geom_text(aes(label = sprintf("%.3f", F1_Score)), color = "black", size = 4, fontface = "bold") +
-    scale_fill_manual(name = "Performance", values = c("Top 3" = "lightgreen", "Other" = "white")) +
-    labs(title = paste0("Model F1-Score", test_suffix), x = "Model", y = "Dataset") +
-    theme_clean
-  
-  # Save plots with appropriate naming
-  accuracy_filename <- paste0(analysis_name, "_Model_Accuracy_Heatmap.png")
-  f1_filename <- paste0(analysis_name, "_Model_F1Score_Heatmap.png")
-  
-  ggsave(file.path(figures_dir, accuracy_filename), accuracy_plot, 
-         width = 8, height = 5, dpi = 300, bg = "white")
-  ggsave(file.path(figures_dir, f1_filename), f1_plot, 
-         width = 8, height = 5, dpi = 300, bg = "white")
-  
-  cat("Saved plots:", accuracy_filename, "and", f1_filename, "\n")
-  
   return(results)
 }
 
@@ -282,8 +212,3 @@ results_overlap <- run_analysis(train_test_dir_overlap, models_dir_overlap, "OVE
 cat("\n=== Analysis Complete ===\n")
 cat("Both analyses used identical training sets\n")
 cat("TOTAL tested on full test set, OVERLAP tested on filtered test set\n")
-cat("Generated files:\n")
-cat("- TOTAL_Model_Accuracy_Heatmap.png\n")
-cat("- TOTAL_Model_F1Score_Heatmap.png\n")
-cat("- OVERLAP_Model_Accuracy_Heatmap.png\n")
-cat("- OVERLAP_Model_F1Score_Heatmap.png\n")
