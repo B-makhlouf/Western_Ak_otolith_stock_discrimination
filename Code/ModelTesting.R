@@ -22,11 +22,11 @@ data_types <- c("RAW", "GAM", "MA", "Sr88", "Combined")
 # Define paths
 base_data_path <- "/Users/benjaminmakhlouf/Research_repos/04_Western_Ak_otolith_stock_discrimination/data/LA_Data/Preprocessed_ts_matrices"
 
-# Output directories - updated path
+# Output directories - UPDATED PATHS
 train_test_dir_total <- "/Users/benjaminmakhlouf/Research_repos/04_Western_Ak_otolith_stock_discrimination/data/LA_Data/TrainingTesting"
 train_test_dir_overlap <- "/Users/benjaminmakhlouf/Research_repos/04_Western_Ak_otolith_stock_discrimination/data/LA_Data/TrainingTesting/Filtered"
-models_dir_total <- "/Users/benjaminmakhlouf/Research_repos/04_Western_Ak_otolith_stock_discrimination/data/Models"
-models_dir_overlap <- "/Users/benjaminmakhlouf/Research_repos/04_Western_Ak_otolith_stock_discrimination/data/Models/Filtered"
+models_dir_total <- "/Users/benjaminmakhlouf/Research_repos/04_Western_Ak_otolith_stock_discrimination/Output/Models/Total"
+models_dir_overlap <- "/Users/benjaminmakhlouf/Research_repos/04_Western_Ak_otolith_stock_discrimination/Output/Models/Filtered"
 
 # Create directories if they don't exist
 dir.create(train_test_dir_total, recursive = TRUE, showWarnings = FALSE)
@@ -119,10 +119,13 @@ write.csv(fish_id_splits, file.path(train_test_dir_overlap, "Fish_ID_Splits.csv"
 #### FUNCTION TO RUN ANALYSIS
 ################################################################################
 
-run_analysis <- function(train_test_dir, models_dir, analysis_name) {
+run_analysis <- function(train_test_dir, models_dir, analysis_name, results_dir) {
   
   # Create results data frame
   results <- data.frame()
+  
+  # Create results directory if it doesn't exist
+  dir.create(results_dir, recursive = TRUE, showWarnings = FALSE)
   
   # Loop through each dataset and model
   for (data_type in data_types) {
@@ -175,6 +178,24 @@ run_analysis <- function(train_test_dir, models_dir, analysis_name) {
         predict(test_data) %>%
         bind_cols(test_data %>% select(Watershed))
       
+      # Get prediction probabilities
+      pred_probs <- workflow_obj %>%
+        predict(test_data, type = "prob")
+      
+      # Combine predictions and probabilities with metadata
+      predictions_with_probs <- predictions %>%
+        bind_cols(pred_probs) %>%
+        mutate(
+          Dataset = data_type,
+          Model = model_name,
+          Correct = Watershed == .pred_class
+        )
+      
+      # Save predictions and probabilities to ModelResultsPreCal
+      pred_filename <- paste0(data_type, "_", model_name, "_", analysis_name, "_predictions.csv")
+      pred_filepath <- file.path(results_dir, pred_filename)
+      write.csv(predictions_with_probs, pred_filepath, row.names = FALSE)
+      
       # Calculate metrics
       accuracy <- mean(predictions$Watershed == predictions$.pred_class)
       f1_score <- predictions %>%
@@ -203,12 +224,103 @@ run_analysis <- function(train_test_dir, models_dir, analysis_name) {
 #### RUN BOTH ANALYSES
 ################################################################################
 
+# Define results directories - NEW PATHS
+results_dir_total <- "/Users/benjaminmakhlouf/Research_repos/04_Western_Ak_otolith_stock_discrimination/Output/ModelResultsPreCal/Total"
+results_dir_overlap <- "/Users/benjaminmakhlouf/Research_repos/04_Western_Ak_otolith_stock_discrimination/Output/ModelResultsPreCal/Filtered"
+
 cat("=== Running TOTAL analysis (same training, full test set) ===\n")
-results_total <- run_analysis(train_test_dir_total, models_dir_total, "TOTAL")
+results_total <- run_analysis(train_test_dir_total, models_dir_total, "TOTAL", results_dir_total)
 
 cat("\n=== Running OVERLAP analysis (same training, filtered test set) ===\n")
-results_overlap <- run_analysis(train_test_dir_overlap, models_dir_overlap, "OVERLAP")
+results_overlap <- run_analysis(train_test_dir_overlap, models_dir_overlap, "OVERLAP", results_dir_overlap)
+
+# Create heatmap visualization
+library(ggplot2)
+library(viridis)
+library(scales)
+
+# Create output directory for figures - NEW PATH
+figures_dir <- "/Users/benjaminmakhlouf/Research_repos/04_Western_Ak_otolith_stock_discrimination/Figures"
+dir.create(figures_dir, recursive = TRUE, showWarnings = FALSE)
+
+# Function to create heatmap
+create_heatmap <- function(results, title, filename) {
+  
+  # Prepare data for heatmap
+  results_formatted <- results %>%
+    mutate(
+      Dataset = factor(Dataset, levels = c("RAW", "GAM", "MA", "Sr88", "Combined")),
+      Model = factor(Model, levels = c("RF", "SVM", "KNN"),
+                     labels = c("Random Forest", "SVM", "KNN"))
+    )
+  
+  # Create heatmap
+  p <- ggplot(results_formatted, aes(x = Model, y = Dataset, fill = Accuracy)) +
+    geom_tile(color = "white", linewidth = 0.5) +
+    geom_text(aes(label = sprintf("%.3f", Accuracy)), 
+              color = "black", size = 4, fontface = "bold") +
+    scale_fill_gradientn(
+      colors = c("dodgerblue4", "dodgerblue", "yellow", "orange", "firebrick"),
+      values = scales::rescale(c(min(results_formatted$Accuracy), 
+                                 min(results_formatted$Accuracy) + 0.25 * (max(results_formatted$Accuracy) - min(results_formatted$Accuracy)), 
+                                 mean(range(results_formatted$Accuracy)), 
+                                 max(results_formatted$Accuracy) - 0.25 * (max(results_formatted$Accuracy) - min(results_formatted$Accuracy)), 
+                                 max(results_formatted$Accuracy))),
+      limits = c(min(results_formatted$Accuracy) * 0.99, max(results_formatted$Accuracy) * 1.01),
+      labels = scales::percent_format(accuracy = 0.1)
+    ) +
+    labs(
+      title = title,
+      x = "Model Type",
+      y = "Data Source",
+      fill = "Accuracy"
+    ) +
+    theme_minimal(base_size = 14) +
+    theme(
+      plot.title = element_text(hjust = 0.5, face = "bold", size = 16),
+      axis.title = element_text(face = "bold", size = 14),
+      axis.text = element_text(size = 12),
+      panel.grid = element_blank(),
+      legend.position = "right",
+      legend.key.height = unit(1.5, "cm"),
+      legend.title = element_text(size = 12),
+      legend.text = element_text(size = 10)
+    )
+  
+  # Save heatmap
+  ggsave(file.path(figures_dir, filename), p, width = 10, height = 8, dpi = 300)
+  
+  return(p)
+}
+
+# Create heatmaps for both analyses - ALL DATA TYPES
+if (nrow(results_total) > 0) {
+  create_heatmap(results_total, "Classification Accuracy - TOTAL Analysis (All Data Types)", "heatmap_total_all.png")
+}
+
+if (nrow(results_overlap) > 0) {
+  create_heatmap(results_overlap, "Classification Accuracy - OVERLAP Analysis (All Data Types)", "heatmap_overlap_all.png")
+}
+
+# Create heatmaps for JUST Sr87/86 data types (RAW, GAM, MA)
+sr8786_data_types <- c("RAW", "GAM", "MA")
+
+# Filter results for Sr87/86 only
+results_total_sr8786 <- results_total %>% filter(Dataset %in% sr8786_data_types)
+results_overlap_sr8786 <- results_overlap %>% filter(Dataset %in% sr8786_data_types)
+
+# Create Sr87/86-only heatmaps
+if (nrow(results_total_sr8786) > 0) {
+  create_heatmap(results_total_sr8786, "Classification Accuracy - TOTAL Analysis (Sr87/86 Only)", "heatmap_total_sr8786.png")
+}
+
+if (nrow(results_overlap_sr8786) > 0) {
+  create_heatmap(results_overlap_sr8786, "Classification Accuracy - OVERLAP Analysis (Sr87/86 Only)", "heatmap_overlap_sr8786.png")
+}
 
 cat("\n=== Analysis Complete ===\n")
 cat("Both analyses used identical training sets\n")
 cat("TOTAL tested on full test set, OVERLAP tested on filtered test set\n")
+cat("Models saved to:", models_dir_total, "and", models_dir_overlap, "\n")
+cat("Results saved to:", results_dir_total, "and", results_dir_overlap, "\n")
+cat("Figures saved to:", figures_dir, "\n")
