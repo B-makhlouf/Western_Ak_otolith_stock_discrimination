@@ -150,7 +150,7 @@ run_analysis <- function(train_test_dir, models_dir, analysis_name, results_dir)
     n_predictors <- ncol(train_data) - 1
     
     models <- list(
-      RF = rand_forest(trees = 500, mtry = floor(sqrt(n_predictors))) %>% 
+      RF = rand_forest(trees = 5000, mtry = floor(sqrt(n_predictors))) %>% 
         set_engine("ranger") %>% set_mode("classification"),
       SVM = svm_rbf() %>% set_engine("kernlab") %>% set_mode("classification"),
       KNN = nearest_neighbor(neighbors = 5) %>% set_engine("kknn") %>% set_mode("classification")
