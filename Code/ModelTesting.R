@@ -329,7 +329,7 @@ if (length(importance_files) > 0) {
 }
 
 ################################################################################
-#### CREATE HEATMAPS (SAME AS BEFORE)
+#### CREATE COMBINED HEATMAPS FOR BOTH ANALYSES
 ################################################################################
 
 library(ggplot2)
@@ -337,67 +337,146 @@ library(viridis)
 library(scales)
 
 # Create output directory for figures
-figures_dir <- "/Users/benjaminmakhlouf/Research_repos/04_Western_Ak_otolith_stock_discrimination/Figures"
+figures_dir <- "/Users/benjaminmakhlouf/Research_repos/04_Western_Ak_otolith_stock_discrimination/Figures/ModelPerformance"
 dir.create(figures_dir, recursive = TRUE, showWarnings = FALSE)
 
-# Function to create heatmap (SAME AS BEFORE)
-create_heatmap <- function(results, title, filename) {
+# Function to create combined heatmap for both analyses
+create_combined_heatmaps <- function(results_total, results_overlap) {
   
-  # Prepare data for heatmap
-  results_formatted <- results %>%
-    mutate(
-      Dataset = factor(Dataset, levels = c("RAW", "GAM", "MA", "Sr88", "Combined")),
-      Model = factor(Model, levels = c("RF", "SVM", "KNN"),
-                     labels = c("Random Forest", "SVM", "KNN"))
-    )
-  
-  # Create heatmap
-  p <- ggplot(results_formatted, aes(x = Model, y = Dataset, fill = Accuracy)) +
-    geom_tile(color = "white", linewidth = 0.5) +
-    geom_text(aes(label = sprintf("%.3f", Accuracy)), 
-              color = "black", size = 4, fontface = "bold") +
-    scale_fill_gradientn(
-      colors = c("dodgerblue4", "dodgerblue", "yellow", "orange", "firebrick"),
-      values = scales::rescale(c(min(results_formatted$Accuracy), 
-                                 min(results_formatted$Accuracy) + 0.25 * (max(results_formatted$Accuracy) - min(results_formatted$Accuracy)), 
-                                 mean(range(results_formatted$Accuracy)), 
-                                 max(results_formatted$Accuracy) - 0.25 * (max(results_formatted$Accuracy) - min(results_formatted$Accuracy)), 
-                                 max(results_formatted$Accuracy))),
-      limits = c(min(results_formatted$Accuracy) * 0.99, max(results_formatted$Accuracy) * 1.01),
-      labels = scales::percent_format(accuracy = 0.1)
-    ) +
-    labs(
-      title = title,
-      x = "Model Type",
-      y = "Data Source",
-      fill = "Accuracy"
-    ) +
-    theme_minimal(base_size = 14) +
-    theme(
-      plot.title = element_text(hjust = 0.5, face = "bold", size = 16),
-      axis.title = element_text(face = "bold", size = 14),
-      axis.text = element_text(size = 12),
-      panel.grid = element_blank(),
-      legend.position = "right",
-      legend.key.height = unit(1.5, "cm"),
-      legend.title = element_text(size = 12),
-      legend.text = element_text(size = 10)
-    )
-  
-  # Save heatmap
-  ggsave(file.path(figures_dir, filename), p, width = 10, height = 8, dpi = 300)
-  
-  return(p)
+  # Combine results from both analyses
+  if (nrow(results_total) > 0 && nrow(results_overlap) > 0) {
+    
+    # Add analysis identifier to each dataset
+    results_total_labeled <- results_total %>%
+      mutate(Analysis = "Total")
+    
+    results_overlap_labeled <- results_overlap %>%
+      mutate(Analysis = "Overlapping")
+    
+    # Combine the results
+    combined_results <- bind_rows(results_total_labeled, results_overlap_labeled)
+    
+    # Filter to only include Sr87/86 data (RAW, GAM, MA) early in the process
+    combined_results <- combined_results %>%
+      filter(Dataset %in% c("RAW", "GAM", "MA"))
+    
+    # Create combined dataset names
+    combined_results <- combined_results %>%
+      mutate(
+        Dataset_Combined = paste(Dataset, Analysis, sep = " - "),
+        Dataset = factor(Dataset, levels = c("RAW", "GAM", "MA")),
+        Model = factor(Model, levels = c("RF", "SVM", "KNN"),
+                       labels = c("Random Forest", "SVM", "KNN")),
+        Dataset_Combined = factor(Dataset_Combined, 
+                                  levels = c(paste(c("RAW", "GAM", "MA"), "- Total"),
+                                             paste(c("RAW", "GAM", "MA"), "- Overlapping")))
+      )
+    
+    # ============================================================================
+    # ACCURACY HEATMAP
+    # ============================================================================
+    
+    accuracy_plot <- ggplot(combined_results, aes(x = Model, y = Dataset_Combined, fill = Accuracy)) +
+      geom_tile(color = NA, width = 1, height = 1) +
+      geom_text(aes(label = sprintf("%.3f", Accuracy)), 
+                color = "black", size = 3.5, fontface = "bold") +
+      scale_fill_gradientn(
+        colors = c("#2E86AB", "#3CBCCF", "#A8E6CF", "#FFCC02", "#FF9F40", "#FF8E53", "#FF6B6B"),
+        values = scales::rescale(c(0, 0.15, 0.3, 0.5, 0.7, 0.85, 1)),
+        limits = c(min(combined_results$Accuracy) * 0.99, max(combined_results$Accuracy) * 1.01),
+        labels = scales::percent_format(accuracy = 0.1)
+      ) +
+      labs(
+        title = "Classification Accuracy Comparison",
+        x = "Model Type",
+        y = "Data Source",
+        fill = "Accuracy"
+      ) +
+      theme_void() +
+      theme(
+        plot.title = element_text(hjust = 0.5, face = "bold", size = 16, margin = margin(b = 10)),
+        plot.subtitle = element_text(hjust = 0.5, size = 12, color = "gray40", margin = margin(b = 20)),
+        axis.title.x = element_text(face = "bold", size = 12, margin = margin(t = 15)),
+        axis.title.y = element_text(face = "bold", size = 12, margin = margin(r = 15), angle = 90),
+        axis.text.x = element_text(size = 11, margin = margin(t = 8)),
+        axis.text.y = element_text(size = 10, margin = margin(r = 8)),
+        panel.background = element_rect(fill = "white", color = NA),
+        plot.background = element_rect(fill = "white", color = NA),
+        legend.position = "right",
+        legend.key.height = unit(1.5, "cm"),
+        legend.key.width = unit(0.8, "cm"),
+        legend.title = element_text(size = 12, face = "bold"),
+        legend.text = element_text(size = 10),
+        legend.margin = margin(l = 20),
+        plot.margin = margin(20, 25, 20, 25)
+      ) +
+      # Add horizontal line to separate Total and Overlapping
+      annotate("segment", x = 0.5, xend = 3.5, y = 3.5, yend = 3.5, 
+               color = "white", size = 2)
+    
+    # ============================================================================
+    # F1-SCORE HEATMAP
+    # ============================================================================
+    
+    f1_plot <- ggplot(combined_results, aes(x = Model, y = Dataset_Combined, fill = F1_Score)) +
+      geom_tile(color = NA, width = 1, height = 1) +
+      geom_text(aes(label = sprintf("%.3f", F1_Score)), 
+                color = "black", size = 3.5, fontface = "bold") +
+      scale_fill_gradientn(
+        colors = c("#2E86AB", "#3CBCCF", "#A8E6CF", "#FFCC02", "#FF9F40", "#FF8E53", "#FF6B6B"),
+        values = scales::rescale(c(0, 0.15, 0.3, 0.5, 0.7, 0.85, 1)),
+        limits = c(min(combined_results$F1_Score) * 0.99, max(combined_results$F1_Score) * 1.01),
+        labels = scales::percent_format(accuracy = 0.1)
+      ) +
+      labs(
+        title = "F1-Score Comparison",
+        x = "Model Type",
+        y = "Data Source",
+        fill = "F1-Score"
+      ) +
+      theme_void() +
+      theme(
+        plot.title = element_text(hjust = 0.5, face = "bold", size = 16, margin = margin(b = 10)),
+        plot.subtitle = element_text(hjust = 0.5, size = 12, color = "gray40", margin = margin(b = 20)),
+        axis.title.x = element_text(face = "bold", size = 12, margin = margin(t = 15)),
+        axis.title.y = element_text(face = "bold", size = 12, margin = margin(r = 15), angle = 90),
+        axis.text.x = element_text(size = 11, margin = margin(t = 8)),
+        axis.text.y = element_text(size = 10, margin = margin(r = 8)),
+        panel.background = element_rect(fill = "white", color = NA),
+        plot.background = element_rect(fill = "white", color = NA),
+        legend.position = "right",
+        legend.key.height = unit(1.5, "cm"),
+        legend.key.width = unit(0.8, "cm"),
+        legend.title = element_text(size = 12, face = "bold"),
+        legend.text = element_text(size = 10),
+        legend.margin = margin(l = 20),
+        plot.margin = margin(20, 25, 20, 25)
+      ) +
+      # Add horizontal line to separate Total and Overlapping
+      annotate("segment", x = 0.5, xend = 3.5, y = 3.5, yend = 3.5, 
+               color = "white", size = 2)
+    
+    # Save both heatmaps as PDFs with white background
+    ggsave(file.path(figures_dir, "Combined_Accuracy_Heatmap.pdf"), 
+           accuracy_plot, width = 10, height = 6, dpi = 300, bg = "white")
+    
+    ggsave(file.path(figures_dir, "Combined_F1Score_Heatmap.pdf"), 
+           f1_plot, width = 10, height = 6, dpi = 300, bg = "white")
+    
+    cat("✓ Combined heatmaps saved as PDFs:\n")
+    cat("  - Combined_Accuracy_Heatmap.pdf\n")
+    cat("  - Combined_F1Score_Heatmap.pdf\n")
+    
+    return(list(accuracy_plot = accuracy_plot, f1_plot = f1_plot))
+    
+  } else {
+    cat("⚠ Warning: Missing results from one or both analyses\n")
+    return(NULL)
+  }
 }
 
-# Create heatmaps for both analyses
-if (nrow(results_total) > 0) {
-  create_heatmap(results_total, "Classification Accuracy - TOTAL Analysis (All Data Types)", "heatmap_total_all.png")
-}
-
-if (nrow(results_overlap) > 0) {
-  create_heatmap(results_overlap, "Classification Accuracy - OVERLAP Analysis (All Data Types)", "heatmap_overlap_all.png")
-}
+# Create the combined heatmaps
+combined_plots <- create_combined_heatmaps(results_total, results_overlap)
 
 cat("\n=== Analysis Complete ===\n")
 cat("Models saved to:", models_dir_total, "and", models_dir_overlap, "\n")
