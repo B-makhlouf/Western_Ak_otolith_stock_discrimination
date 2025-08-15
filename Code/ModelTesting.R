@@ -388,8 +388,9 @@ create_combined_heatmaps <- function(results_total, results_overlap) {
       ) +
       labs(
         title = "Classification Accuracy Comparison",
+        subtitle = "Sr87/86 isotope data performance across analysis approaches",
         x = "Model Type",
-        y = "Data Source",
+        y = "Data Source - Analysis Type",
         fill = "Accuracy"
       ) +
       theme_void() +
@@ -430,8 +431,9 @@ create_combined_heatmaps <- function(results_total, results_overlap) {
       ) +
       labs(
         title = "F1-Score Comparison",
+        subtitle = "Sr87/86 isotope data performance across analysis approaches",
         x = "Model Type",
-        y = "Data Source",
+        y = "Data Source - Analysis Type",
         fill = "F1-Score"
       ) +
       theme_void() +
@@ -477,6 +479,173 @@ create_combined_heatmaps <- function(results_total, results_overlap) {
 
 # Create the combined heatmaps
 combined_plots <- create_combined_heatmaps(results_total, results_overlap)
+
+# CREATE ADDITIONAL FIGURES FOR GAM RF MODEL
+create_gam_rf_figures <- function(results_dir_total, results_dir_overlap) {
+  
+  # Load GAM RF predictions for both analyses
+  gam_rf_total_file <- file.path(results_dir_total, "GAM_RF_TOTAL_predictions.csv")
+  gam_rf_overlap_file <- file.path(results_dir_overlap, "GAM_RF_OVERLAP_predictions.csv")
+  
+  if (file.exists(gam_rf_total_file) && file.exists(gam_rf_overlap_file)) {
+    
+    # Load predictions
+    gam_rf_total <- read.csv(gam_rf_total_file)
+    gam_rf_overlap <- read.csv(gam_rf_overlap_file)
+    
+    # Add analysis labels
+    gam_rf_total$Analysis <- "Total"
+    gam_rf_overlap$Analysis <- "Overlapping"
+    
+    # Combine predictions
+    combined_gam_rf <- bind_rows(gam_rf_total, gam_rf_overlap)
+    
+    # ========================================================================
+    # CLASS-SPECIFIC ACCURACY - MODERN CIRCULAR DESIGN
+    # ========================================================================
+    
+    # Calculate class-specific accuracy for each analysis
+    class_accuracy <- combined_gam_rf %>%
+      group_by(Analysis, Watershed) %>%
+      summarise(
+        Accuracy = mean(Watershed == .pred_class),
+        .groups = "drop"
+      ) %>%
+      mutate(
+        Watershed = factor(Watershed, levels = c("Kusko", "Nush", "Yukon")),
+        Analysis = factor(Analysis, levels = c("Total", "Overlapping"))
+      )
+    
+    # Create modern circular accuracy plot
+    class_accuracy_plot <- ggplot(class_accuracy, aes(x = Analysis, y = Watershed)) +
+      # Add subtle background circles
+      geom_point(size = 35, alpha = 0.1, color = "gray90") +
+      # Main accuracy circles
+      geom_point(aes(size = Accuracy, color = Accuracy), alpha = 0.8) +
+      # Add accuracy text
+      geom_text(aes(label = sprintf("%.1f%%", Accuracy * 100)), 
+                color = "white", size = 4.5, fontface = "bold") +
+      scale_size_continuous(range = c(15, 35), guide = "none") +
+      scale_color_gradient2(
+        low = "#3498db", mid = "#f39c12", high = "#e74c3c",
+        midpoint = 0.7, limits = c(0, 1),
+        labels = scales::percent_format()
+      ) +
+      labs(
+        title = "Watershed Classification Accuracy",
+        subtitle = "GAM Random Forest Model Performance by Class",
+        x = "Analysis Type",
+        y = "Watershed",
+        color = "Accuracy"
+      ) +
+      theme_void() +
+      theme(
+        plot.title = element_text(hjust = 0.5, face = "bold", size = 18, margin = margin(b = 5)),
+        plot.subtitle = element_text(hjust = 0.5, size = 14, color = "gray50", margin = margin(b = 30)),
+        axis.title.x = element_text(face = "bold", size = 14, margin = margin(t = 20)),
+        axis.title.y = element_text(face = "bold", size = 14, margin = margin(r = 20), angle = 90),
+        axis.text.x = element_text(size = 12, face = "bold", margin = margin(t = 10)),
+        axis.text.y = element_text(size = 12, face = "bold", margin = margin(r = 10)),
+        panel.background = element_rect(fill = "white", color = NA),
+        plot.background = element_rect(fill = "white", color = NA),
+        legend.position = "bottom",
+        legend.title = element_text(size = 12, face = "bold"),
+        legend.text = element_text(size = 10),
+        legend.key.width = unit(2, "cm"),
+        legend.key.height = unit(0.5, "cm"),
+        plot.margin = margin(30, 30, 30, 30)
+      )
+    
+    # ========================================================================
+    # CONFUSION MATRICES - MINIMALIST DESIGN
+    # ========================================================================
+    
+    # Function to create confusion matrix data
+    create_confusion_data <- function(predictions, analysis_name) {
+      conf_data <- predictions %>%
+        count(Watershed, .pred_class) %>%
+        group_by(Watershed) %>%
+        mutate(
+          Total = sum(n),
+          Percentage = n / Total,
+          Analysis = analysis_name
+        ) %>%
+        ungroup() %>%
+        complete(Watershed, .pred_class, fill = list(n = 0, Percentage = 0)) %>%
+        mutate(
+          Analysis = analysis_name,
+          Label = ifelse(n > 0, as.character(n), ""),
+          is_diagonal = Watershed == .pred_class
+        )
+      return(conf_data)
+    }
+    
+    # Create confusion matrix data for both analyses
+    conf_total <- create_confusion_data(gam_rf_total, "Total")
+    conf_overlap <- create_confusion_data(gam_rf_overlap, "Overlapping")
+    combined_conf <- bind_rows(conf_total, conf_overlap)
+    
+    # Create sleek confusion matrix plot
+    confusion_plot <- ggplot(combined_conf, aes(x = .pred_class, y = fct_rev(Watershed))) +
+      geom_tile(aes(fill = Percentage), color = "white", size = 1.5) +
+      geom_text(aes(label = Label), 
+                color = "white", size = 5, fontface = "bold") +
+      scale_fill_gradient(
+        low = "#34495e", high = "#e74c3c",
+        limits = c(0, 1),
+        labels = scales::percent_format(),
+        na.value = "#ecf0f1"
+      ) +
+      facet_wrap(~Analysis, 
+                 labeller = labeller(Analysis = c("Total" = "Total Analysis", "Overlapping" = "Overlapping Analysis"))) +
+      labs(
+        title = "Classification Confusion Matrices",
+        subtitle = "GAM Random Forest Model - Predicted vs. Actual",
+        x = "Predicted Watershed",
+        y = "Actual Watershed", 
+        fill = "Accuracy"
+      ) +
+      theme_minimal() +
+      theme(
+        plot.title = element_text(hjust = 0.5, face = "bold", size = 18, margin = margin(b = 5)),
+        plot.subtitle = element_text(hjust = 0.5, size = 14, color = "gray50", margin = margin(b = 25)),
+        axis.title = element_text(face = "bold", size = 14, margin = margin(10, 10, 10, 10)),
+        axis.text = element_text(size = 12, face = "bold"),
+        panel.background = element_rect(fill = "white", color = NA),
+        plot.background = element_rect(fill = "white", color = NA),
+        panel.grid = element_blank(),
+        strip.text = element_text(size = 14, face = "bold", margin = margin(10, 10, 10, 10)),
+        strip.background = element_rect(fill = "#ecf0f1", color = NA),
+        legend.position = "bottom",
+        legend.title = element_text(size = 12, face = "bold"),
+        legend.text = element_text(size = 10),
+        legend.key.width = unit(2, "cm"),
+        legend.key.height = unit(0.5, "cm"),
+        plot.margin = margin(30, 30, 30, 30)
+      ) +
+      coord_equal()
+    
+    # Save both additional figures as PDFs
+    ggsave(file.path(figures_dir, "GAM_RF_Class_Specific_Accuracy.pdf"), 
+           class_accuracy_plot, width = 8, height = 6, dpi = 300, bg = "white")
+    
+    ggsave(file.path(figures_dir, "GAM_RF_Confusion_Matrix.pdf"), 
+           confusion_plot, width = 12, height = 6, dpi = 300, bg = "white")
+    
+    cat("✓ Additional GAM RF figures saved as PDFs:\n")
+    cat("  - GAM_RF_Class_Specific_Accuracy.pdf\n")
+    cat("  - GAM_RF_Confusion_Matrix.pdf\n")
+    
+    return(list(class_accuracy_plot = class_accuracy_plot, confusion_plot = confusion_plot))
+    
+  } else {
+    cat("⚠ Warning: GAM RF prediction files not found\n")
+    return(NULL)
+  }
+}
+
+# Create the additional GAM RF figures
+gam_rf_plots <- create_gam_rf_figures(results_dir_total, results_dir_overlap)
 
 cat("\n=== Analysis Complete ===\n")
 cat("Models saved to:", models_dir_total, "and", models_dir_overlap, "\n")
