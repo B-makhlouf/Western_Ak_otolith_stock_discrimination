@@ -65,6 +65,8 @@ for (data_type in data_types) {
 fish_ids_unfiltered <- lapply(all_data_unfiltered, function(x) x$Fish_id)
 common_fish_ids <- Reduce(intersect, fish_ids_unfiltered)
 
+
+
 # Create train/test split based on Fish_id
 unique_fish_ids <- unique(common_fish_ids)
 train_fish_ids <- sample(unique_fish_ids, size = 0.8 * length(unique_fish_ids))
@@ -376,13 +378,14 @@ create_combined_heatmaps <- function(results_total, results_overlap) {
     # ACCURACY HEATMAP
     # ============================================================================
     
+    # ACCURACY HEATMAP - Updated color scheme
     accuracy_plot <- ggplot(combined_results, aes(x = Model, y = Dataset_Combined, fill = Accuracy)) +
       geom_tile(color = NA, width = 1, height = 1) +
       geom_text(aes(label = sprintf("%.3f", Accuracy)), 
                 color = "black", size = 3.5, fontface = "bold") +
-      scale_fill_gradientn(
-        colors = c("#2E86AB", "#3CBCCF", "#A8E6CF", "#FFCC02", "#FF9F40", "#FF8E53", "#FF6B6B"),
-        values = scales::rescale(c(0, 0.15, 0.3, 0.5, 0.7, 0.85, 1)),
+      scale_fill_gradient(
+        low = "white", 
+        high = "#9AB87A",
         limits = c(min(combined_results$Accuracy) * 0.99, max(combined_results$Accuracy) * 1.01),
         labels = scales::percent_format(accuracy = 0.1)
       ) +
@@ -415,17 +418,14 @@ create_combined_heatmaps <- function(results_total, results_overlap) {
       annotate("segment", x = 0.5, xend = 3.5, y = 3.5, yend = 3.5, 
                color = "white", size = 2)
     
-    # ============================================================================
-    # F1-SCORE HEATMAP
-    # ============================================================================
-    
+    # F1-SCORE HEATMAP - Updated color scheme
     f1_plot <- ggplot(combined_results, aes(x = Model, y = Dataset_Combined, fill = F1_Score)) +
       geom_tile(color = NA, width = 1, height = 1) +
       geom_text(aes(label = sprintf("%.3f", F1_Score)), 
                 color = "black", size = 3.5, fontface = "bold") +
-      scale_fill_gradientn(
-        colors = c("#2E86AB", "#3CBCCF", "#A8E6CF", "#FFCC02", "#FF9F40", "#FF8E53", "#FF6B6B"),
-        values = scales::rescale(c(0, 0.15, 0.3, 0.5, 0.7, 0.85, 1)),
+      scale_fill_gradient(
+        low = "white", 
+        high = "#9AB87A",
         limits = c(min(combined_results$F1_Score) * 0.99, max(combined_results$F1_Score) * 1.01),
         labels = scales::percent_format(accuracy = 0.1)
       ) +
