@@ -378,11 +378,11 @@ create_combined_heatmaps <- function(results_total, results_overlap) {
     # ACCURACY HEATMAP
     # ============================================================================
     
-    # ACCURACY HEATMAP - Updated color scheme
+    # ACCURACY HEATMAP - Updated color scheme with larger text
     accuracy_plot <- ggplot(combined_results, aes(x = Model, y = Dataset_Combined, fill = Accuracy)) +
       geom_tile(color = NA, width = 1, height = 1) +
       geom_text(aes(label = sprintf("%.3f", Accuracy)), 
-                color = "black", size = 3.5, fontface = "bold") +
+                color = "black", size = 6, fontface = "bold") +
       scale_fill_gradient(
         low = "white", 
         high = "#9AB87A",
@@ -390,27 +390,26 @@ create_combined_heatmaps <- function(results_total, results_overlap) {
         labels = scales::percent_format(accuracy = 0.1)
       ) +
       labs(
-        title = "Classification Accuracy Comparison",
-        subtitle = "Sr87/86 isotope data performance across analysis approaches",
+        title = "Accuracy",
         x = "Model Type",
-        y = "Data Source - Analysis Type",
+        y = "Data Source",
         fill = "Accuracy"
       ) +
       theme_void() +
       theme(
-        plot.title = element_text(hjust = 0.5, face = "bold", size = 16, margin = margin(b = 10)),
-        plot.subtitle = element_text(hjust = 0.5, size = 12, color = "gray40", margin = margin(b = 20)),
-        axis.title.x = element_text(face = "bold", size = 12, margin = margin(t = 15)),
-        axis.title.y = element_text(face = "bold", size = 12, margin = margin(r = 15), angle = 90),
-        axis.text.x = element_text(size = 11, margin = margin(t = 8)),
-        axis.text.y = element_text(size = 10, margin = margin(r = 8)),
+        plot.title = element_text(hjust = 0.5, face = "bold", size = 20, margin = margin(b = 10)),
+        plot.subtitle = element_text(hjust = 0.5, size = 16, color = "gray40", margin = margin(b = 20)),
+        axis.title.x = element_text(face = "bold", size = 16, margin = margin(t = 15)),
+        axis.title.y = element_text(face = "bold", size = 16, margin = margin(r = 15), angle = 90),
+        axis.text.x = element_text(size = 14, margin = margin(t = 8)),
+        axis.text.y = element_text(size = 14, margin = margin(r = 8)),
         panel.background = element_rect(fill = "white", color = NA),
         plot.background = element_rect(fill = "white", color = NA),
         legend.position = "right",
         legend.key.height = unit(1.5, "cm"),
         legend.key.width = unit(0.8, "cm"),
-        legend.title = element_text(size = 12, face = "bold"),
-        legend.text = element_text(size = 10),
+        legend.title = element_text(size = 16, face = "bold"),
+        legend.text = element_text(size = 14),
         legend.margin = margin(l = 20),
         plot.margin = margin(20, 25, 20, 25)
       ) +
@@ -418,11 +417,64 @@ create_combined_heatmaps <- function(results_total, results_overlap) {
       annotate("segment", x = 0.5, xend = 3.5, y = 3.5, yend = 3.5, 
                color = "white", size = 2)
     
-    # F1-SCORE HEATMAP - Updated color scheme
+    # BLACK AND WHITE VERSIONS
+    # ACCURACY HEATMAP - Black and white version
+    accuracy_plot_bw <- ggplot(combined_results, aes(x = Model, y = Dataset_Combined)) +
+      geom_tile(fill = "white", color = "black", size = 1, width = 1, height = 1) +
+      geom_text(aes(label = sprintf("%.3f", Accuracy)), 
+                color = "black", size = 6, fontface = "bold") +
+      labs(
+        title = "Accuracy",
+        x = "Model Type",
+        y = "Data Source "
+      ) +
+      theme_void() +
+      theme(
+        plot.title = element_text(hjust = 0.5, face = "bold", size = 20, margin = margin(b = 10)),
+        plot.subtitle = element_text(hjust = 0.5, size = 16, color = "gray40", margin = margin(b = 20)),
+        axis.title.x = element_text(face = "bold", size = 16, margin = margin(t = 15)),
+        axis.title.y = element_text(face = "bold", size = 16, margin = margin(r = 15), angle = 90),
+        axis.text.x = element_text(size = 14, margin = margin(t = 8)),
+        axis.text.y = element_text(size = 14, margin = margin(r = 8)),
+        panel.background = element_rect(fill = "white", color = NA),
+        plot.background = element_rect(fill = "white", color = NA),
+        plot.margin = margin(20, 25, 20, 25)
+      ) +
+      # Add horizontal line to separate Total and Overlapping
+      annotate("segment", x = 0.5, xend = 3.5, y = 3.5, yend = 3.5, 
+               color = "black", size = 2)
+    
+    # F1-SCORE HEATMAP - Black and white version
+    f1_plot_bw <- ggplot(combined_results, aes(x = Model, y = Dataset_Combined)) +
+      geom_tile(fill = "white", color = "black", size = 1, width = 1, height = 1) +
+      geom_text(aes(label = sprintf("%.3f", F1_Score)), 
+                color = "black", size = 6, fontface = "bold") +
+      labs(
+        title = "F1-Score",
+        x = "Model Type",
+        y = "Data Source"
+      ) +
+      theme_void() +
+      theme(
+        plot.title = element_text(hjust = 0.5, face = "bold", size = 20, margin = margin(b = 10)),
+        plot.subtitle = element_text(hjust = 0.5, size = 16, color = "gray40", margin = margin(b = 20)),
+        axis.title.x = element_text(face = "bold", size = 16, margin = margin(t = 15)),
+        axis.title.y = element_text(face = "bold", size = 16, margin = margin(r = 15), angle = 90),
+        axis.text.x = element_text(size = 14, margin = margin(t = 8)),
+        axis.text.y = element_text(size = 14, margin = margin(r = 8)),
+        panel.background = element_rect(fill = "white", color = NA),
+        plot.background = element_rect(fill = "white", color = NA),
+        plot.margin = margin(20, 25, 20, 25)
+      ) +
+      # Add horizontal line to separate Total and Overlapping
+      annotate("segment", x = 0.5, xend = 3.5, y = 3.5, yend = 3.5, 
+               color = "black", size = 2)
+    
+    # F1-SCORE HEATMAP - Updated color scheme with larger text
     f1_plot <- ggplot(combined_results, aes(x = Model, y = Dataset_Combined, fill = F1_Score)) +
       geom_tile(color = NA, width = 1, height = 1) +
       geom_text(aes(label = sprintf("%.3f", F1_Score)), 
-                color = "black", size = 3.5, fontface = "bold") +
+                color = "black", size = 6, fontface = "bold") +
       scale_fill_gradient(
         low = "white", 
         high = "#9AB87A",
@@ -430,27 +482,26 @@ create_combined_heatmaps <- function(results_total, results_overlap) {
         labels = scales::percent_format(accuracy = 0.1)
       ) +
       labs(
-        title = "F1-Score Comparison",
-        subtitle = "Sr87/86 isotope data performance across analysis approaches",
+        title = "F1-Score",
         x = "Model Type",
-        y = "Data Source - Analysis Type",
+        y = "Data Source",
         fill = "F1-Score"
       ) +
       theme_void() +
       theme(
-        plot.title = element_text(hjust = 0.5, face = "bold", size = 16, margin = margin(b = 10)),
-        plot.subtitle = element_text(hjust = 0.5, size = 12, color = "gray40", margin = margin(b = 20)),
-        axis.title.x = element_text(face = "bold", size = 12, margin = margin(t = 15)),
-        axis.title.y = element_text(face = "bold", size = 12, margin = margin(r = 15), angle = 90),
-        axis.text.x = element_text(size = 11, margin = margin(t = 8)),
-        axis.text.y = element_text(size = 10, margin = margin(r = 8)),
+        plot.title = element_text(hjust = 0.5, face = "bold", size = 20, margin = margin(b = 10)),
+        plot.subtitle = element_text(hjust = 0.5, size = 16, color = "gray40", margin = margin(b = 20)),
+        axis.title.x = element_text(face = "bold", size = 16, margin = margin(t = 15)),
+        axis.title.y = element_text(face = "bold", size = 16, margin = margin(r = 15), angle = 90),
+        axis.text.x = element_text(size = 14, margin = margin(t = 8)),
+        axis.text.y = element_text(size = 14, margin = margin(r = 8)),
         panel.background = element_rect(fill = "white", color = NA),
         plot.background = element_rect(fill = "white", color = NA),
         legend.position = "right",
         legend.key.height = unit(1.5, "cm"),
         legend.key.width = unit(0.8, "cm"),
-        legend.title = element_text(size = 12, face = "bold"),
-        legend.text = element_text(size = 10),
+        legend.title = element_text(size = 16, face = "bold"),
+        legend.text = element_text(size = 14),
         legend.margin = margin(l = 20),
         plot.margin = margin(20, 25, 20, 25)
       ) +
@@ -464,6 +515,12 @@ create_combined_heatmaps <- function(results_total, results_overlap) {
     
     ggsave(file.path(figures_dir, "Combined_F1Score_Heatmap.pdf"), 
            f1_plot, width = 10, height = 6, dpi = 300, bg = "white")
+    
+    ggsave(file.path(figures_dir, "Combined_Accuracy_Heatmap_BW.pdf"), 
+           accuracy_plot_bw, width = 10, height = 6, dpi = 300, bg = "white")
+    
+    ggsave(file.path(figures_dir, "Combined_F1Score_Heatmap_BW.pdf"), 
+           f1_plot_bw, width = 10, height = 6, dpi = 300, bg = "white")
     
     cat("✓ Combined heatmaps saved as PDFs:\n")
     cat("  - Combined_Accuracy_Heatmap.pdf\n")
