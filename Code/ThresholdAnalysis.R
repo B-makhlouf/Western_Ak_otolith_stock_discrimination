@@ -6,6 +6,7 @@
 # Linear script - no functions for easy line-by-line execution
 # With direct line labeling like The Economist style
 # FIXED: Label overlap issue in TOTAL dataset plot
+# UPDATED: Increased label sizes for publication quality
 # =============================================================================
 
 library(tidyverse)
@@ -249,27 +250,33 @@ line_types <- c(
 end_labels_total <- combined_line_data_total %>% 
   filter(Threshold_Percent == 90) %>%
   mutate(
-    # Keep labels at actual line heights but stagger x positions slightly
-    label_y = Performance,  # Keep at actual line position
+    # Stagger both x and y positions to prevent overlap
     label_x = case_when(
       Watershed == "Yukon" ~ 91.2,      # Yukon slightly further right
       Watershed == "Nush" ~ 91.8,       # Nush further right to avoid overlap
       Watershed == "Average" ~ 91.5,    # Average in middle
       Watershed == "Kusko" ~ 91.0,      # Kusko closest
       TRUE ~ 91.5
+    ),
+    label_y = case_when(
+      Watershed == "Yukon" ~ Performance,        # Keep Yukon at line position
+      Watershed == "Nush" ~ Performance - 1.5,   # Move Nush down slightly
+      Watershed == "Average" ~ Performance + 1,  # Move Average up slightly
+      Watershed == "Kusko" ~ Performance,        # Keep Kusko at line position
+      TRUE ~ Performance
     )
   )
 
 plot_total <- ggplot(combined_line_data_total, aes(x = Threshold_Percent, y = Performance, 
                                                    color = Watershed, linetype = Watershed)) +
   # Simple, clean lines
-  geom_line(linewidth = 1.2, alpha = 0.9) +
+  geom_line(linewidth = 1.8, alpha = 0.9) +
   # Simple points
-  geom_point(size = 2, alpha = 0.9) +
+  geom_point(size = 3, alpha = 0.9) +
   # Add labels at the end of each line - staggered horizontally to avoid overlap
   geom_text(data = end_labels_total,
             aes(label = Watershed, x = label_x, y = label_y, color = Watershed),
-            hjust = 0, size = 4.2, fontface = "bold", show.legend = FALSE) +
+            hjust = 0, size = 6.5, fontface = "bold", show.legend = FALSE) +
   # Scales
   scale_color_manual(values = watershed_colors) +
   scale_linetype_manual(values = line_types) +
@@ -292,7 +299,7 @@ plot_total <- ggplot(combined_line_data_total, aes(x = Threshold_Percent, y = Pe
     y = "Classification Accuracy"
   ) +
   # Clean, Economist-style theme
-  theme_minimal(base_size = 11) +
+  theme_minimal(base_size = 16) +
   theme(
     # Clean white background
     plot.background = element_rect(fill = "white", color = NA),
@@ -305,7 +312,7 @@ plot_total <- ggplot(combined_line_data_total, aes(x = Threshold_Percent, y = Pe
     panel.border = element_blank(),
     # Clean typography
     plot.title = element_text(
-      hjust = 0, size = 14, face = "bold", 
+      hjust = 0, size = 20, face = "bold", 
       color = "#2E2E2E", margin = margin(b = 15)
     ),
     plot.caption = element_text(
@@ -313,14 +320,14 @@ plot_total <- ggplot(combined_line_data_total, aes(x = Threshold_Percent, y = Pe
       color = "#999999", margin = margin(t = 15)
     ),
     axis.title.x = element_text(
-      size = 10, color = "#666666", 
+      size = 16, color = "#333333", face = "bold",
       margin = margin(t = 10)
     ),
     axis.title.y = element_text(
-      size = 10, color = "#666666", 
+      size = 16, color = "#333333", face = "bold",
       margin = margin(r = 10)
     ),
-    axis.text = element_text(size = 9, color = "#666666"),
+    axis.text = element_text(size = 16, color = "#333333", face = "bold"),
     # Simple axis lines
     axis.line.x = element_line(color = "#CCCCCC", linewidth = 0.3),
     axis.line.y = element_line(color = "#CCCCCC", linewidth = 0.3),
@@ -351,13 +358,13 @@ end_labels_overlap <- combined_line_data_overlap %>%
 plot_overlap <- ggplot(combined_line_data_overlap, aes(x = Threshold_Percent, y = Performance, 
                                                        color = Watershed, linetype = Watershed)) +
   # Simple, clean lines
-  geom_line(linewidth = 1.2, alpha = 0.9) +
+  geom_line(linewidth = 1.8, alpha = 0.9) +
   # Simple points
-  geom_point(size = 2, alpha = 0.9) +
+  geom_point(size = 3, alpha = 0.9) +
   # Add labels at the end of each line - increased size with adjusted positions
   geom_text(data = end_labels_overlap,
             aes(label = Watershed, x = Threshold_Percent + 1.5, y = label_y, color = Watershed),
-            hjust = 0, size = 4.5, fontface = "bold", show.legend = FALSE) +
+            hjust = 0, size = 6.5, fontface = "bold", show.legend = FALSE) +
   # Scales
   scale_color_manual(values = watershed_colors) +
   scale_linetype_manual(values = line_types) +
@@ -380,7 +387,7 @@ plot_overlap <- ggplot(combined_line_data_overlap, aes(x = Threshold_Percent, y 
     y = "Classification Accuracy"
   ) +
   # Clean, Economist-style theme
-  theme_minimal(base_size = 11) +
+  theme_minimal(base_size = 16) +
   theme(
     # Clean white background
     plot.background = element_rect(fill = "white", color = NA),
@@ -393,7 +400,7 @@ plot_overlap <- ggplot(combined_line_data_overlap, aes(x = Threshold_Percent, y 
     panel.border = element_blank(),
     # Clean typography
     plot.title = element_text(
-      hjust = 0, size = 14, face = "bold", 
+      hjust = 0, size = 20, face = "bold", 
       color = "#2E2E2E", margin = margin(b = 15)
     ),
     plot.caption = element_text(
@@ -401,14 +408,14 @@ plot_overlap <- ggplot(combined_line_data_overlap, aes(x = Threshold_Percent, y 
       color = "#999999", margin = margin(t = 15)
     ),
     axis.title.x = element_text(
-      size = 10, color = "#666666", 
+      size = 16, color = "#666666", 
       margin = margin(t = 10)
     ),
     axis.title.y = element_text(
-      size = 10, color = "#666666", 
+      size = 16, color = "#666666", 
       margin = margin(r = 10)
     ),
-    axis.text = element_text(size = 9, color = "#666666"),
+    axis.text = element_text(size = 16, color = "#333333", face = "bold"),
     # Simple axis lines
     axis.line.x = element_line(color = "#CCCCCC", linewidth = 0.3),
     axis.line.y = element_line(color = "#CCCCCC", linewidth = 0.3),
@@ -431,8 +438,8 @@ combined_plot <- plot_total + plot_overlap +
     title = "Watershed Classification Performance Across Probability Thresholds",
     subtitle = "GAM Random Forest Model • Accuracy comparison between TOTAL and OVERLAP datasets",
     theme = theme(
-      plot.title = element_text(hjust = 0.5, size = 18, face = "bold", color = "#2E2E2E"),
-      plot.subtitle = element_text(hjust = 0.5, size = 12, color = "#666666"),
+      plot.title = element_text(hjust = 0.5, size = 24, face = "bold", color = "#2E2E2E"),
+      plot.subtitle = element_text(hjust = 0.5, size = 18, color = "#666666"),
       plot.caption = element_text(hjust = 0.5, size = 10, color = "#999999")
     )
   )
