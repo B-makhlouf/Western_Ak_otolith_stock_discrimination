@@ -533,15 +533,6 @@ create_individual_pca_plots <- function(gam_data, raw_data, dataset_name, title_
 # =============================================================================
 # ADDITIONAL 2D PCA PLOTS FUNCTION (PC1 vs PC2 and PC2 vs PC3 in COLUMN layout)
 # =============================================================================
-# Modified create_additional_pca_plots function
-# Changes: Removed main title, increased all font sizes significantly
-
-# Modified create_additional_pca_plots function
-# Changes: Removed main title, increased all font sizes significantly
-
-# Modified create_additional_pca_plots function
-# Changes: Removed main title, increased all font sizes significantly
-
 create_additional_pca_plots <- function(gam_data, dataset_name, output_directory) {
   
   # Run PCA on GAM-smoothed data
@@ -571,12 +562,12 @@ create_additional_pca_plots <- function(gam_data, dataset_name, output_directory
   colors <- c("Kusko" = "firebrick", "Nush" = "darkgreen", "Yukon" = "dodgerblue")
   
   # =============================================================================
-  # PC1 vs PC2 PLOT - INCREASED FONT SIZES, NO LEGEND (for combined figure)
+  # PC1 vs PC2 PLOT
   # =============================================================================
   
   pc1_pc2_plot <- ggplot(pc_scores, aes(x = PC1, y = PC2, color = Watershed)) +
     # Add points with transparency
-    geom_point(size = 4, alpha = 0.7, stroke = 0.3) +  # Increased from 2.5 to 4
+    geom_point(size = 2.5, alpha = 0.7, stroke = 0.2) +
     # Use the same watershed colors
     scale_color_manual(values = colors, name = "Watershed") +
     # Clean axis formatting
@@ -588,44 +579,53 @@ create_additional_pca_plots <- function(gam_data, dataset_name, output_directory
       breaks = pretty_breaks(n = 6),
       expand = expansion(mult = 0.05)
     ) +
-    # Labels with variance explained - NO TITLE
+    # Labels with variance explained
     labs(
-      title = NULL,  # Removed title
+      title = paste0("PC1 vs PC2"),
       x = paste0("PC1 (", round(var_explained[1] * 100, 2), "% variance)"),
       y = paste0("PC2 (", round(var_explained[2] * 100, 2), "% variance)")
     ) +
-    # Clean theme with MUCH LARGER fonts
-    theme_minimal(base_size = 20) +  # Increased from 12 to 20
+    # Clean theme
+    theme_minimal(base_size = 12) +
     theme(
       # Plot elements
+      plot.title = element_text(size = 16, face = "bold", hjust = 0.5, 
+                                color = "grey15", margin = margin(b = 5)),
+      plot.subtitle = element_text(size = 12, hjust = 0.5, color = "grey40",
+                                   margin = margin(b = 15)),
       plot.background = element_rect(fill = "white", color = NA),
       panel.background = element_rect(fill = "white", color = NA),
       
-      # Axes - INCREASED SIZES
-      axis.title = element_text(size = 22, face = "bold", color = "grey20"),  # Increased from 13 to 22
-      axis.title.x = element_text(margin = margin(t = 12)),  # Increased margin
-      axis.title.y = element_text(margin = margin(r = 12)),  # Increased margin
-      axis.text = element_text(size = 18, color = "grey30"),  # Increased from 11 to 18
-      axis.line = element_line(color = "grey60", linewidth = 0.6),  # Increased from 0.4
-      axis.ticks = element_line(color = "grey60", linewidth = 0.5),  # Increased from 0.3
-      axis.ticks.length = unit(5, "pt"),  # Increased from 3
+      # Axes
+      axis.title = element_text(size = 13, face = "bold", color = "grey20"),
+      axis.title.x = element_text(margin = margin(t = 8)),
+      axis.title.y = element_text(margin = margin(r = 8)),
+      axis.text = element_text(size = 11, color = "grey30"),
+      axis.line = element_line(color = "grey60", linewidth = 0.4),
+      axis.ticks = element_line(color = "grey60", linewidth = 0.3),
+      axis.ticks.length = unit(3, "pt"),
       
       # Grid
-      panel.grid.major = element_line(color = "grey90", linewidth = 0.4),  # Increased from 0.3
+      panel.grid.major = element_line(color = "grey90", linewidth = 0.3),
       panel.grid.minor = element_blank(),
       
-      # Legend - REMOVED for combined figure
-      legend.position = "none",
+      # Legend
+      legend.position = "bottom",
+      legend.title = element_text(size = 12, face = "bold", color = "grey20"),
+      legend.text = element_text(size = 11, color = "grey30"),
+      legend.key = element_blank(),
+      legend.margin = margin(t = 10),
+      legend.box.margin = margin(t = 5),
       
       # Margins
-      plot.margin = margin(20, 20, 20, 20)  # Increased from 15
+      plot.margin = margin(15, 15, 15, 15)
     )
   
   # Try to add ellipses if possible
   tryCatch({
     pc1_pc2_plot <- pc1_pc2_plot + 
       stat_ellipse(aes(fill = Watershed), alpha = 0.15, level = 0.95, 
-                   geom = "polygon", show.legend = FALSE, linewidth = 1) +  # Increased linewidth
+                   geom = "polygon", show.legend = FALSE) +
       scale_fill_manual(values = colors, guide = "none")
     cat("  Added confidence ellipses to PC1 vs PC2 plot\n")
   }, error = function(e) {
@@ -643,12 +643,12 @@ create_additional_pca_plots <- function(gam_data, dataset_name, output_directory
   cat("Saved PC1 vs PC2 plot:", pc1_pc2_filename, "\n")
   
   # =============================================================================
-  # PC2 vs PC3 PLOT - INCREASED FONT SIZES, NO LEGEND (for combined figure)
+  # PC2 vs PC3 PLOT
   # =============================================================================
   
   pc2_pc3_plot <- ggplot(pc_scores, aes(x = PC2, y = PC3, color = Watershed)) +
     # Add points with transparency
-    geom_point(size = 4, alpha = 0.7, stroke = 0.3) +  # Increased from 2.5 to 4
+    geom_point(size = 2.5, alpha = 0.7, stroke = 0.2) +
     # Use the same watershed colors
     scale_color_manual(values = colors, name = "Watershed") +
     # Clean axis formatting
@@ -660,44 +660,53 @@ create_additional_pca_plots <- function(gam_data, dataset_name, output_directory
       breaks = pretty_breaks(n = 6),
       expand = expansion(mult = 0.05)
     ) +
-    # Labels with variance explained - NO TITLE
+    # Labels with variance explained
     labs(
-      title = NULL,  # Removed title
+      title = paste0("PC2 vs PC3"),
       x = paste0("PC2 (", round(var_explained[2] * 100, 2), "% variance)"),
       y = paste0("PC3 (", round(var_explained[3] * 100, 2), "% variance)")
     ) +
-    # Clean theme with MUCH LARGER fonts
-    theme_minimal(base_size = 20) +  # Increased from 12 to 20
+    # Clean theme
+    theme_minimal(base_size = 12) +
     theme(
       # Plot elements
+      plot.title = element_text(size = 16, face = "bold", hjust = 0.5, 
+                                color = "grey15", margin = margin(b = 5)),
+      plot.subtitle = element_text(size = 12, hjust = 0.5, color = "grey40",
+                                   margin = margin(b = 15)),
       plot.background = element_rect(fill = "white", color = NA),
       panel.background = element_rect(fill = "white", color = NA),
       
-      # Axes - INCREASED SIZES
-      axis.title = element_text(size = 22, face = "bold", color = "grey20"),  # Increased from 13 to 22
-      axis.title.x = element_text(margin = margin(t = 12)),  # Increased margin
-      axis.title.y = element_text(margin = margin(r = 12)),  # Increased margin
-      axis.text = element_text(size = 18, color = "grey30"),  # Increased from 11 to 18
-      axis.line = element_line(color = "grey60", linewidth = 0.6),  # Increased from 0.4
-      axis.ticks = element_line(color = "grey60", linewidth = 0.5),  # Increased from 0.3
-      axis.ticks.length = unit(5, "pt"),  # Increased from 3
+      # Axes
+      axis.title = element_text(size = 13, face = "bold", color = "grey20"),
+      axis.title.x = element_text(margin = margin(t = 8)),
+      axis.title.y = element_text(margin = margin(r = 8)),
+      axis.text = element_text(size = 11, color = "grey30"),
+      axis.line = element_line(color = "grey60", linewidth = 0.4),
+      axis.ticks = element_line(color = "grey60", linewidth = 0.3),
+      axis.ticks.length = unit(3, "pt"),
       
       # Grid
-      panel.grid.major = element_line(color = "grey90", linewidth = 0.4),  # Increased from 0.3
+      panel.grid.major = element_line(color = "grey90", linewidth = 0.3),
       panel.grid.minor = element_blank(),
       
-      # Legend - REMOVED for combined figure
-      legend.position = "none",
+      # Legend
+      legend.position = "bottom",
+      legend.title = element_text(size = 12, face = "bold", color = "grey20"),
+      legend.text = element_text(size = 11, color = "grey30"),
+      legend.key = element_blank(),
+      legend.margin = margin(t = 10),
+      legend.box.margin = margin(t = 5),
       
       # Margins
-      plot.margin = margin(20, 20, 20, 20)  # Increased from 15
+      plot.margin = margin(15, 15, 15, 15)
     )
   
   # Try to add ellipses if possible
   tryCatch({
     pc2_pc3_plot <- pc2_pc3_plot + 
       stat_ellipse(aes(fill = Watershed), alpha = 0.15, level = 0.95, 
-                   geom = "polygon", show.legend = FALSE, linewidth = 1) +  # Increased linewidth
+                   geom = "polygon", show.legend = FALSE) +
       scale_fill_manual(values = colors, guide = "none")
     cat("  Added confidence ellipses to PC2 vs PC3 plot\n")
   }, error = function(e) {
@@ -715,81 +724,20 @@ create_additional_pca_plots <- function(gam_data, dataset_name, output_directory
   cat("Saved PC2 vs PC3 plot:", pc2_pc3_filename, "\n")
   
   # =============================================================================
-  # COMBINED PLOT - ONE SHARED LEGEND AT BOTTOM, LARGER FONTS
+  # COMBINED PLOT (PC1 vs PC2 and PC2 vs PC3 in COLUMN layout)
   # =============================================================================
   
-  # Create PC2 vs PC3 plot WITH LEGEND (will be used for combined plot)
-  pc2_pc3_plot_with_legend <- ggplot(pc_scores, aes(x = PC2, y = PC3, color = Watershed)) +
-    # Add points with transparency
-    geom_point(size = 4, alpha = 0.7, stroke = 0.3) +
-    # Use the same watershed colors
-    scale_color_manual(values = colors, name = "Watershed") +
-    # Clean axis formatting
-    scale_x_continuous(
-      breaks = pretty_breaks(n = 6),
-      expand = expansion(mult = 0.05)
-    ) +
-    scale_y_continuous(
-      breaks = pretty_breaks(n = 6),
-      expand = expansion(mult = 0.05)
-    ) +
-    # Labels with variance explained - NO TITLE
-    labs(
-      title = NULL,
-      x = paste0("PC2 (", round(var_explained[2] * 100, 2), "% variance)"),
-      y = paste0("PC3 (", round(var_explained[3] * 100, 2), "% variance)")
-    ) +
-    # Clean theme with MUCH LARGER fonts
-    theme_minimal(base_size = 20) +
-    theme(
-      # Plot elements
-      plot.background = element_rect(fill = "white", color = NA),
-      panel.background = element_rect(fill = "white", color = NA),
-      
-      # Axes - INCREASED SIZES
-      axis.title = element_text(size = 22, face = "bold", color = "grey20"),
-      axis.title.x = element_text(margin = margin(t = 12)),
-      axis.title.y = element_text(margin = margin(r = 12)),
-      axis.text = element_text(size = 18, color = "grey30"),
-      axis.line = element_line(color = "grey60", linewidth = 0.6),
-      axis.ticks = element_line(color = "grey60", linewidth = 0.5),
-      axis.ticks.length = unit(5, "pt"),
-      
-      # Grid
-      panel.grid.major = element_line(color = "grey90", linewidth = 0.4),
-      panel.grid.minor = element_blank(),
-      
-      # Legend - LARGE AND VISIBLE
-      legend.position = "bottom",
-      legend.title = element_text(size = 24, face = "bold", color = "grey20"),
-      legend.text = element_text(size = 22, color = "grey30"),
-      legend.key.size = unit(2, "lines"),
-      legend.key = element_blank(),
-      legend.spacing.x = unit(0.8, "cm"),
-      legend.margin = margin(t = 15),
-      legend.box.margin = margin(t = 10),
-      
-      # Margins
-      plot.margin = margin(20, 20, 20, 20)
-    )
-  
-  # Try to add ellipses to the version with legend
-  tryCatch({
-    pc2_pc3_plot_with_legend <- pc2_pc3_plot_with_legend + 
-      stat_ellipse(aes(fill = Watershed), alpha = 0.15, level = 0.95, 
-                   geom = "polygon", show.legend = FALSE, linewidth = 1) +
-      scale_fill_manual(values = colors, guide = "none")
-  }, error = function(e) {
-    cat("  Warning: Could not add ellipses to PC2 vs PC3 plot with legend\n")
-  })
-  
-  # Create combined plot using patchwork with legend on bottom plot only
-  combined_plot_with_legend <- (pc1_pc2_plot / pc2_pc3_plot_with_legend) +
-    plot_layout(nrow = 2) +
+  # Create combined plot using patchwork (COLUMN layout instead of row)
+  combined_plot <- pc1_pc2_plot / pc2_pc3_plot +
+    plot_layout(nrow = 2) +  # Changed from ncol = 2 to nrow = 2
     plot_annotation(
-      title = NULL,  # REMOVED MAIN TITLE
+      title = paste0("Principal Component Analysis Natal Origin 0.7080 - 0.7085"),
       theme = theme_void() +
         theme(
+          plot.title = element_text(size = 18, face = "bold", hjust = 0.5, 
+                                    color = "grey10", margin = margin(t = 15, b = 8)),
+          plot.subtitle = element_text(size = 12, hjust = 0.5, color = "grey40",
+                                       margin = margin(b = 15)),
           plot.background = element_rect(fill = "white", color = NA),
           plot.margin = margin(15, 15, 15, 15)
         )
@@ -798,8 +746,8 @@ create_additional_pca_plots <- function(gam_data, dataset_name, output_directory
   # Save combined plot (adjusted dimensions for column layout)
   combined_filename <- paste0(dataset_name, "_Combined_PCA_Views.pdf")
   combined_filepath <- file.path(output_directory, combined_filename)
-  ggsave(combined_filepath, combined_plot_with_legend, 
-         width = 10, height = 16,
+  ggsave(combined_filepath, combined_plot, 
+         width = 10, height = 16,  # Changed from width = 16, height = 8 to width = 10, height = 16
          device = cairo_pdf,
          dpi = 300,
          units = "in")
@@ -811,7 +759,7 @@ create_additional_pca_plots <- function(gam_data, dataset_name, output_directory
     pca_result = pca_result,
     pc1_pc2_plot = pc1_pc2_plot,
     pc2_pc3_plot = pc2_pc3_plot,
-    combined_plot = combined_plot_with_legend
+    combined_plot = combined_plot
   ))
 }
 
