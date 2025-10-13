@@ -111,7 +111,7 @@ if(nrow(available_fish) >= 1) {
       ) +
       labs(
         title = paste0(fish_id, " • ", watershed),
-        x = if(pc_num == 3) "Time Point" else NULL,
+        x = if(pc_num == 3) "" else NULL,
         y = if(show_y_title) expression(paste(""^87, "Sr/", ""^86, "Sr")) else NULL
       ) +
       # Clean theme
@@ -138,7 +138,7 @@ if(nrow(available_fish) >= 1) {
         
         # Legend
         legend.position = if(show_legend) "bottom" else "none",
-        legend.title = element_text(size = 9, face = "bold", color = "grey20"),
+        legend.title = element_blank(),
         legend.text = element_text(size = 8, color = "grey30"),
         legend.key = element_blank(),
         legend.margin = margin(t = 6),
@@ -154,7 +154,8 @@ if(nrow(available_fish) >= 1) {
   }
   
   # Custom version of create_fish_panel for the four-individual figure with custom titles
-  create_fish_panel_custom <- function(fish_id, pc_num, show_legend = FALSE, show_y_title = FALSE, is_middle = FALSE, custom_title = NULL) {
+  create_fish_panel_custom <- function(fish_id, pc_num, show_legend = FALSE, show_y_title = FALSE, 
+                                       is_middle = FALSE, custom_title = NULL, show_title = TRUE) {
     
     # Get fish data
     fish_data_gam <- gam_data_same_no %>% filter(Fish_id == fish_id)
@@ -181,32 +182,29 @@ if(nrow(available_fish) >= 1) {
     # Select the appropriate PC and color range
     if(pc_num == 1) {
       color_var <- fish_ts_df$PC1_abs
-      legend_name <- "|PC1|"
       color_limits <- pc1_range
     } else if(pc_num == 2) {
       color_var <- fish_ts_df$PC2_abs
-      legend_name <- "|PC2|"
       color_limits <- pc2_range
     } else {  # pc_num == 3
       color_var <- fish_ts_df$PC3_abs
-      legend_name <- "|PC3|"
       color_limits <- pc3_range
     }
     
-    # Use custom title if provided, otherwise use original format
-    plot_title <- if(!is.null(custom_title)) custom_title else paste0(fish_id, " • ", watershed)
+    # Use custom title if provided and show_title is TRUE, otherwise no title
+    plot_title <- if(show_title && !is.null(custom_title)) custom_title else NULL
     
     # Create the plot
     p <- ggplot(fish_ts_df, aes(x = time_point)) +
       # Raw data points
-      geom_point(aes(y = sr_ratio_raw), color = "grey70", size = 1.0, alpha = 0.6) +
+      geom_point(aes(y = sr_ratio_raw), color = "grey70", size = 1.5, alpha = 0.6) +
       # GAM smoothed line
-      geom_line(aes(y = sr_ratio_gam), color = "grey40", alpha = 0.9, size = 1.0) +
+      geom_line(aes(y = sr_ratio_gam), color = "grey40", alpha = 0.9, size = 1.2) +
       # GAM points colored by loadings
-      geom_point(aes(y = sr_ratio_gam, color = color_var), size = 1.8, alpha = 1.0, stroke = 0) +
-      # Plasma color scale - darker for higher values, consistent across row
+      geom_point(aes(y = sr_ratio_gam, color = color_var), size = 2.5, alpha = 1.0, stroke = 0) +
+      # Plasma color scale - NO LEGEND TITLE
       scale_color_viridis_c(
-        name = legend_name,
+        name = NULL,  # Remove legend title
         option = "plasma",
         begin = 0.9,
         end = 0.1,
@@ -214,12 +212,12 @@ if(nrow(available_fish) >= 1) {
         limits = color_limits,
         guide = if(show_legend) {
           guide_colorbar(
-            barwidth = 8,
-            barheight = 0.6,
+            barwidth = 10,
+            barheight = 0.8,
             title.position = "top",
             title.hjust = 0.5,
             frame.colour = "grey70",
-            frame.linewidth = 0.3
+            frame.linewidth = 0.4
           )
         } else {
           "none"
@@ -237,44 +235,48 @@ if(nrow(available_fish) >= 1) {
         labels = label_number(accuracy = 0.001)
       ) +
       labs(
-        title = plot_title,  # Use the custom title
-        x = if(pc_num == 3) "Time Point" else NULL,
+        title = plot_title,
+        x = if(pc_num == 3) "" else NULL,
         y = if(show_y_title) expression(paste(""^87, "Sr/", ""^86, "Sr")) else NULL
       ) +
-      # Clean theme
-      theme_minimal(base_size = 10) +
+      # Clean theme with larger text for publication
+      theme_minimal(base_size = 14) +
       theme(
-        plot.title = element_text(size = 11, face = "bold", hjust = 0.5, 
-                                  color = "grey15", margin = margin(b = 8)),
+        plot.title = if(!is.null(plot_title)) {
+          element_text(size = 16, face = "bold", hjust = 0.5, 
+                       color = "grey15", margin = margin(b = 10))
+        } else {
+          element_blank()
+        },
         plot.background = element_rect(fill = "white", color = NA),
         panel.background = element_rect(fill = "white", color = NA),
         
-        # Axes
-        axis.title.y = element_text(size = 10, face = "bold", color = "grey20", 
-                                    margin = margin(r = 6)),
-        axis.title.x = element_text(size = 10, face = "bold", color = "grey20", 
-                                    margin = margin(t = 6)),
-        axis.text = element_text(size = 9, color = "grey30"),
-        axis.line = element_line(color = "grey60", size = 0.4),
-        axis.ticks = element_line(color = "grey60", size = 0.3),
-        axis.ticks.length = unit(2, "pt"),
+        # Axes - larger text for publication
+        axis.title.y = element_text(size = 16, face = "bold", color = "grey20", 
+                                    margin = margin(r = 8)),
+        axis.title.x = element_text(size = 16, face = "bold", color = "grey20", 
+                                    margin = margin(t = 8)),
+        axis.text = element_text(size = 14, color = "grey30"),
+        axis.line = element_line(color = "grey60", size = 0.5),
+        axis.ticks = element_line(color = "grey60", size = 0.4),
+        axis.ticks.length = unit(3, "pt"),
         
         # Grid
-        panel.grid.major = element_line(color = "grey90", size = 0.25),
+        panel.grid.major = element_line(color = "grey90", size = 0.3),
         panel.grid.minor = element_blank(),
         
-        # Legend
+        # Legend - NO TITLE
         legend.position = if(show_legend) "bottom" else "none",
-        legend.title = element_text(size = 9, face = "bold", color = "grey20"),
-        legend.text = element_text(size = 8, color = "grey30"),
+        legend.title = element_blank(),
+        legend.text = element_text(size = 12, color = "grey30"),
         legend.key = element_blank(),
-        legend.margin = margin(t = 6),
-        legend.box.margin = margin(t = 4),
+        legend.margin = margin(t = 8),
+        legend.box.margin = margin(t = 6),
         legend.justification = if(is_middle) "center" else "center",
         
         # Spacing
-        plot.margin = margin(6, 8, 6, 8),
-        panel.spacing = unit(4, "pt")
+        plot.margin = margin(8, 10, 8, 10),
+        panel.spacing = unit(6, "pt")
       )
     
     return(p)
@@ -467,12 +469,14 @@ if(nrow(available_specific_fish) >= 1) {
     fish_id <- available_specific_fish$Fish_id[fish_idx]
     
     # Create the three PC panels for this fish
+    # Only show title in the first row (PC1)
     specific_panels[[paste0("pc1_fish", fish_idx)]] <- create_fish_panel_custom(
       fish_id, 1, 
       show_legend = (fish_idx == 2), # Show legend on second fish
       show_y_title = (fish_idx == 1), # Show y-title on first fish
       is_middle = (fish_idx == 2),
-      custom_title = fish_labels[[fish_id]]  # Use custom label
+      custom_title = fish_labels[[fish_id]],  # Use custom label
+      show_title = TRUE  # Show title only in first row
     )
     
     specific_panels[[paste0("pc2_fish", fish_idx)]] <- create_fish_panel_custom(
@@ -480,7 +484,8 @@ if(nrow(available_specific_fish) >= 1) {
       show_legend = (fish_idx == 2), # Show legend on second fish
       show_y_title = (fish_idx == 1), # Show y-title on first fish
       is_middle = (fish_idx == 2),
-      custom_title = fish_labels[[fish_id]]  # Use custom label
+      custom_title = fish_labels[[fish_id]],
+      show_title = FALSE  # No title in subsequent rows
     )
     
     specific_panels[[paste0("pc3_fish", fish_idx)]] <- create_fish_panel_custom(
@@ -488,32 +493,19 @@ if(nrow(available_specific_fish) >= 1) {
       show_legend = (fish_idx == 2), # Show legend on second fish
       show_y_title = (fish_idx == 1), # Show y-title on first fish
       is_middle = (fish_idx == 2),
-      custom_title = fish_labels[[fish_id]]  # Use custom label
+      custom_title = fish_labels[[fish_id]],
+      show_title = FALSE  # No title in subsequent rows
     )
   }
   
   # Create the specific combined figure based on number of available fish
   if(nrow(available_specific_fish) == 4) {
     # All four fish available - create 3x4 grid (3 PCs x 4 fish)
+    # NO MAIN TITLE OR SUBTITLE for publication-friendly version
     specific_combined_figure <- (specific_panels$pc1_fish1 | specific_panels$pc1_fish2 | specific_panels$pc1_fish3 | specific_panels$pc1_fish4) /
       (specific_panels$pc2_fish1 | specific_panels$pc2_fish2 | specific_panels$pc2_fish3 | specific_panels$pc2_fish4) /
       (specific_panels$pc3_fish1 | specific_panels$pc3_fish2 | specific_panels$pc3_fish3 | specific_panels$pc3_fish4) +
-      plot_layout(heights = c(1, 1, 1)) +
-      plot_annotation(
-        title = "Comparison among four individuals with the same natal origin",
-        subtitle = paste0("PC1 (", round(var_explained_combined[1] * 100, 1), "%), PC2 (", 
-                          round(var_explained_combined[2] * 100, 1), "%), and PC3 (", 
-                          round(var_explained_combined[3] * 100, 1), "%) loadings on time series"),
-        theme = theme_void() +
-          theme(
-            plot.title = element_text(size = 14, face = "bold", hjust = 0.5, 
-                                      color = "grey10", margin = margin(t = 15, b = 8)),
-            plot.subtitle = element_text(size = 11, hjust = 0.5, color = "grey40",
-                                         margin = margin(b = 15)),
-            plot.background = element_rect(fill = "white", color = NA),
-            plot.margin = margin(15, 15, 15, 15)
-          )
-      )
+      plot_layout(heights = c(1, 1, 1))
     
     figure_width <- 16  # Increased width for 4 columns
     figure_height <- 12  # Keep same height for 3 rows
@@ -523,22 +515,7 @@ if(nrow(available_specific_fish) >= 1) {
     specific_combined_figure <- (specific_panels$pc1_fish1 | specific_panels$pc1_fish2 | specific_panels$pc1_fish3) /
       (specific_panels$pc2_fish1 | specific_panels$pc2_fish2 | specific_panels$pc2_fish3) /
       (specific_panels$pc3_fish1 | specific_panels$pc3_fish2 | specific_panels$pc3_fish3) +
-      plot_layout(heights = c(1, 1, 1)) +
-      plot_annotation(
-        title = "Comparison among three individuals with the same natal origin",
-        subtitle = paste0("PC1 (", round(var_explained_combined[1] * 100, 1), "%), PC2 (", 
-                          round(var_explained_combined[2] * 100, 1), "%), and PC3 (", 
-                          round(var_explained_combined[3] * 100, 1), "%) loadings on time series"),
-        theme = theme_void() +
-          theme(
-            plot.title = element_text(size = 14, face = "bold", hjust = 0.5, 
-                                      color = "grey10", margin = margin(t = 15, b = 8)),
-            plot.subtitle = element_text(size = 11, hjust = 0.5, color = "grey40",
-                                         margin = margin(b = 15)),
-            plot.background = element_rect(fill = "white", color = NA),
-            plot.margin = margin(15, 15, 15, 15)
-          )
-      )
+      plot_layout(heights = c(1, 1, 1))
     
     figure_width <- 12
     figure_height <- 12
@@ -548,22 +525,7 @@ if(nrow(available_specific_fish) >= 1) {
     specific_combined_figure <- (specific_panels$pc1_fish1 | specific_panels$pc1_fish2) /
       (specific_panels$pc2_fish1 | specific_panels$pc2_fish2) /
       (specific_panels$pc3_fish1 | specific_panels$pc3_fish2) +
-      plot_layout(heights = c(1, 1, 1)) +
-      plot_annotation(
-        title = "Comparison among two individuals with the same natal origin",
-        subtitle = paste0("PC1 (", round(var_explained_combined[1] * 100, 1), "%), PC2 (", 
-                          round(var_explained_combined[2] * 100, 1), "%), and PC3 (", 
-                          round(var_explained_combined[3] * 100, 1), "%) loadings on time series"),
-        theme = theme_void() +
-          theme(
-            plot.title = element_text(size = 14, face = "bold", hjust = 0.5, 
-                                      color = "grey10", margin = margin(t = 15, b = 8)),
-            plot.subtitle = element_text(size = 11, hjust = 0.5, color = "grey40",
-                                         margin = margin(b = 15)),
-            plot.background = element_rect(fill = "white", color = NA),
-            plot.margin = margin(15, 15, 15, 15)
-          )
-      )
+      plot_layout(heights = c(1, 1, 1))
     
     figure_width <- 8
     figure_height <- 12
@@ -573,22 +535,7 @@ if(nrow(available_specific_fish) >= 1) {
     specific_combined_figure <- (specific_panels$pc1_fish1) /
       (specific_panels$pc2_fish1) /
       (specific_panels$pc3_fish1) +
-      plot_layout(heights = c(1, 1, 1)) +
-      plot_annotation(
-        title = "Individual with the same natal origin",
-        subtitle = paste0("PC1 (", round(var_explained_combined[1] * 100, 1), "%), PC2 (", 
-                          round(var_explained_combined[2] * 100, 1), "%), and PC3 (", 
-                          round(var_explained_combined[3] * 100, 1), "%) loadings on time series"),
-        theme = theme_void() +
-          theme(
-            plot.title = element_text(size = 14, face = "bold", hjust = 0.5, 
-                                      color = "grey10", margin = margin(t = 15, b = 8)),
-            plot.subtitle = element_text(size = 11, hjust = 0.5, color = "grey40",
-                                         margin = margin(b = 15)),
-            plot.background = element_rect(fill = "white", color = NA),
-            plot.margin = margin(15, 15, 15, 15)
-          )
-      )
+      plot_layout(heights = c(1, 1, 1))
     
     figure_width <- 4
     figure_height <- 12
