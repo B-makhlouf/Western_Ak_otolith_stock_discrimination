@@ -533,6 +533,12 @@ create_individual_pca_plots <- function(gam_data, raw_data, dataset_name, title_
 # =============================================================================
 # ADDITIONAL 2D PCA PLOTS FUNCTION (PC1 vs PC2 and PC2 vs PC3 in COLUMN layout)
 # =============================================================================
+# Enhanced PCA Plot with Larger Fonts and Single Legend
+# Add this modified function to your ModelVisualization.R script
+
+# Enhanced PCA Plot with Larger Fonts and Single Legend
+# Add this modified function to your ModelVisualization.R script
+
 create_additional_pca_plots <- function(gam_data, dataset_name, output_directory) {
   
   # Run PCA on GAM-smoothed data
@@ -543,7 +549,6 @@ create_additional_pca_plots <- function(gam_data, dataset_name, output_directory
   cat("PC1:", round(var_explained[1] * 100, 2), "%\n")
   cat("PC2:", round(var_explained[2] * 100, 2), "%\n") 
   cat("PC3:", round(var_explained[3] * 100, 2), "%\n")
-  cat("Total variance explained (PC1-3):", round(sum(var_explained) * 100, 1), "%\n")
   
   # Get PC scores for plotting
   pc_scores <- data.frame(
@@ -555,22 +560,16 @@ create_additional_pca_plots <- function(gam_data, dataset_name, output_directory
     Natal_Iso = gam_data$Natal_Iso
   )
   
-  cat("Samples per watershed:\n")
-  print(table(pc_scores$Watershed))
-  
-  # Define colors for watersheds (same as existing plots)
+  # Define colors for watersheds
   colors <- c("Kusko" = "firebrick", "Nush" = "darkgreen", "Yukon" = "dodgerblue")
   
   # =============================================================================
-  # PC1 vs PC2 PLOT
+  # PC1 vs PC2 PLOT - ENHANCED FONT SIZES, NO LEGEND
   # =============================================================================
   
   pc1_pc2_plot <- ggplot(pc_scores, aes(x = PC1, y = PC2, color = Watershed)) +
-    # Add points with transparency
-    geom_point(size = 2.5, alpha = 0.7, stroke = 0.2) +
-    # Use the same watershed colors
+    geom_point(size = 5, alpha = 0.7, stroke = 0.3) +  # Increased point size
     scale_color_manual(values = colors, name = "Watershed") +
-    # Clean axis formatting
     scale_x_continuous(
       breaks = pretty_breaks(n = 6),
       expand = expansion(mult = 0.05)
@@ -579,79 +578,53 @@ create_additional_pca_plots <- function(gam_data, dataset_name, output_directory
       breaks = pretty_breaks(n = 6),
       expand = expansion(mult = 0.05)
     ) +
-    # Labels with variance explained
     labs(
-      title = paste0("PC1 vs PC2"),
+      title = NULL,
       x = paste0("PC1 (", round(var_explained[1] * 100, 2), "% variance)"),
       y = paste0("PC2 (", round(var_explained[2] * 100, 2), "% variance)")
     ) +
-    # Clean theme
-    theme_minimal(base_size = 12) +
+    theme_minimal(base_size = 24) +  # Increased from 20 to 24
     theme(
-      # Plot elements
-      plot.title = element_text(size = 16, face = "bold", hjust = 0.5, 
-                                color = "grey15", margin = margin(b = 5)),
-      plot.subtitle = element_text(size = 12, hjust = 0.5, color = "grey40",
-                                   margin = margin(b = 15)),
       plot.background = element_rect(fill = "white", color = NA),
       panel.background = element_rect(fill = "white", color = NA),
       
-      # Axes
-      axis.title = element_text(size = 13, face = "bold", color = "grey20"),
-      axis.title.x = element_text(margin = margin(t = 8)),
-      axis.title.y = element_text(margin = margin(r = 8)),
-      axis.text = element_text(size = 11, color = "grey30"),
-      axis.line = element_line(color = "grey60", linewidth = 0.4),
-      axis.ticks = element_line(color = "grey60", linewidth = 0.3),
-      axis.ticks.length = unit(3, "pt"),
+      # ENHANCED axis formatting
+      axis.title = element_text(size = 26, face = "bold", color = "grey20"),  # Increased
+      axis.title.x = element_text(margin = margin(t = 15)),
+      axis.title.y = element_text(margin = margin(r = 15)),
+      axis.text = element_text(size = 22, color = "grey30"),  # Increased
+      axis.line = element_line(color = "grey60", linewidth = 0.7),
+      axis.ticks = element_line(color = "grey60", linewidth = 0.6),
+      axis.ticks.length = unit(6, "pt"),
       
       # Grid
-      panel.grid.major = element_line(color = "grey90", linewidth = 0.3),
+      panel.grid.major = element_line(color = "grey90", linewidth = 0.5),
       panel.grid.minor = element_blank(),
       
-      # Legend
-      legend.position = "bottom",
-      legend.title = element_text(size = 12, face = "bold", color = "grey20"),
-      legend.text = element_text(size = 11, color = "grey30"),
-      legend.key = element_blank(),
-      legend.margin = margin(t = 10),
-      legend.box.margin = margin(t = 5),
+      # NO legend
+      legend.position = "none",
       
       # Margins
-      plot.margin = margin(15, 15, 15, 15)
+      plot.margin = margin(25, 25, 25, 25)
     )
   
-  # Try to add ellipses if possible
+  # Add ellipses
   tryCatch({
     pc1_pc2_plot <- pc1_pc2_plot + 
       stat_ellipse(aes(fill = Watershed), alpha = 0.15, level = 0.95, 
-                   geom = "polygon", show.legend = FALSE) +
+                   geom = "polygon", show.legend = FALSE, linewidth = 1.2) +
       scale_fill_manual(values = colors, guide = "none")
-    cat("  Added confidence ellipses to PC1 vs PC2 plot\n")
   }, error = function(e) {
     cat("  Warning: Could not add ellipses to PC1 vs PC2 plot\n")
   })
   
-  # Save PC1 vs PC2 plot
-  pc1_pc2_filename <- paste0(dataset_name, "_PC1_vs_PC2.pdf")
-  pc1_pc2_filepath <- file.path(output_directory, pc1_pc2_filename)
-  ggsave(pc1_pc2_filepath, pc1_pc2_plot, 
-         width = 10, height = 8, 
-         device = cairo_pdf,
-         dpi = 300,
-         units = "in")
-  cat("Saved PC1 vs PC2 plot:", pc1_pc2_filename, "\n")
-  
   # =============================================================================
-  # PC2 vs PC3 PLOT
+  # PC2 vs PC3 PLOT - WITH LARGE LEGEND AT BOTTOM
   # =============================================================================
   
-  pc2_pc3_plot <- ggplot(pc_scores, aes(x = PC2, y = PC3, color = Watershed)) +
-    # Add points with transparency
-    geom_point(size = 2.5, alpha = 0.7, stroke = 0.2) +
-    # Use the same watershed colors
+  pc2_pc3_plot_with_legend <- ggplot(pc_scores, aes(x = PC2, y = PC3, color = Watershed)) +
+    geom_point(size = 5, alpha = 0.7, stroke = 0.3) +  # Increased point size
     scale_color_manual(values = colors, name = "Watershed") +
-    # Clean axis formatting
     scale_x_continuous(
       breaks = pretty_breaks(n = 6),
       expand = expansion(mult = 0.05)
@@ -660,109 +633,104 @@ create_additional_pca_plots <- function(gam_data, dataset_name, output_directory
       breaks = pretty_breaks(n = 6),
       expand = expansion(mult = 0.05)
     ) +
-    # Labels with variance explained
     labs(
-      title = paste0("PC2 vs PC3"),
+      title = NULL,
       x = paste0("PC2 (", round(var_explained[2] * 100, 2), "% variance)"),
       y = paste0("PC3 (", round(var_explained[3] * 100, 2), "% variance)")
     ) +
-    # Clean theme
-    theme_minimal(base_size = 12) +
+    theme_minimal(base_size = 24) +  # Increased from 20 to 24
     theme(
-      # Plot elements
-      plot.title = element_text(size = 16, face = "bold", hjust = 0.5, 
-                                color = "grey15", margin = margin(b = 5)),
-      plot.subtitle = element_text(size = 12, hjust = 0.5, color = "grey40",
-                                   margin = margin(b = 15)),
       plot.background = element_rect(fill = "white", color = NA),
       panel.background = element_rect(fill = "white", color = NA),
       
-      # Axes
-      axis.title = element_text(size = 13, face = "bold", color = "grey20"),
-      axis.title.x = element_text(margin = margin(t = 8)),
-      axis.title.y = element_text(margin = margin(r = 8)),
-      axis.text = element_text(size = 11, color = "grey30"),
-      axis.line = element_line(color = "grey60", linewidth = 0.4),
-      axis.ticks = element_line(color = "grey60", linewidth = 0.3),
-      axis.ticks.length = unit(3, "pt"),
+      # ENHANCED axis formatting
+      axis.title = element_text(size = 26, face = "bold", color = "grey20"),
+      axis.title.x = element_text(margin = margin(t = 15)),
+      axis.title.y = element_text(margin = margin(r = 15)),
+      axis.text = element_text(size = 22, color = "grey30"),
+      axis.line = element_line(color = "grey60", linewidth = 0.7),
+      axis.ticks = element_line(color = "grey60", linewidth = 0.6),
+      axis.ticks.length = unit(6, "pt"),
       
       # Grid
-      panel.grid.major = element_line(color = "grey90", linewidth = 0.3),
+      panel.grid.major = element_line(color = "grey90", linewidth = 0.5),
       panel.grid.minor = element_blank(),
       
-      # Legend
+      # ENHANCED LEGEND - Single, large, at bottom
       legend.position = "bottom",
-      legend.title = element_text(size = 12, face = "bold", color = "grey20"),
-      legend.text = element_text(size = 11, color = "grey30"),
+      legend.title = element_text(size = 28, face = "bold", color = "grey20"),  # Increased
+      legend.text = element_text(size = 26, color = "grey30"),  # Increased
+      legend.key.size = unit(2.5, "lines"),  # Larger icons
       legend.key = element_blank(),
-      legend.margin = margin(t = 10),
-      legend.box.margin = margin(t = 5),
+      legend.spacing.x = unit(1.2, "cm"),  # More space between items
+      legend.margin = margin(t = 20),
+      legend.box.margin = margin(t = 15),
       
       # Margins
-      plot.margin = margin(15, 15, 15, 15)
+      plot.margin = margin(25, 25, 25, 25)
     )
   
-  # Try to add ellipses if possible
+  # Add ellipses
   tryCatch({
-    pc2_pc3_plot <- pc2_pc3_plot + 
+    pc2_pc3_plot_with_legend <- pc2_pc3_plot_with_legend + 
       stat_ellipse(aes(fill = Watershed), alpha = 0.15, level = 0.95, 
-                   geom = "polygon", show.legend = FALSE) +
+                   geom = "polygon", show.legend = FALSE, linewidth = 1.2) +
       scale_fill_manual(values = colors, guide = "none")
-    cat("  Added confidence ellipses to PC2 vs PC3 plot\n")
   }, error = function(e) {
-    cat("  Warning: Could not add ellipses to PC2 vs PC3 plot\n")
+    cat("  Warning: Could not add ellipses to PC2 vs PC3 plot with legend\n")
   })
   
-  # Save PC2 vs PC3 plot
-  pc2_pc3_filename <- paste0(dataset_name, "_PC2_vs_PC3.pdf")
-  pc2_pc3_filepath <- file.path(output_directory, pc2_pc3_filename)
-  ggsave(pc2_pc3_filepath, pc2_pc3_plot, 
-         width = 10, height = 8, 
-         device = cairo_pdf,
-         dpi = 300,
-         units = "in")
-  cat("Saved PC2 vs PC3 plot:", pc2_pc3_filename, "\n")
-  
   # =============================================================================
-  # COMBINED PLOT (PC1 vs PC2 and PC2 vs PC3 in COLUMN layout)
+  # COMBINE WITH PATCHWORK - Column layout with single legend
   # =============================================================================
   
-  # Create combined plot using patchwork (COLUMN layout instead of row)
-  combined_plot <- pc1_pc2_plot / pc2_pc3_plot +
-    plot_layout(nrow = 2) +  # Changed from ncol = 2 to nrow = 2
+  combined_plot_with_legend <- (pc1_pc2_plot / pc2_pc3_plot_with_legend) +
+    plot_layout(nrow = 2) +
     plot_annotation(
-      title = paste0("Principal Component Analysis Natal Origin 0.7080 - 0.7085"),
+      title = NULL,
       theme = theme_void() +
         theme(
-          plot.title = element_text(size = 18, face = "bold", hjust = 0.5, 
-                                    color = "grey10", margin = margin(t = 15, b = 8)),
-          plot.subtitle = element_text(size = 12, hjust = 0.5, color = "grey40",
-                                       margin = margin(b = 15)),
           plot.background = element_rect(fill = "white", color = NA),
-          plot.margin = margin(15, 15, 15, 15)
+          plot.margin = margin(20, 20, 20, 20)
         )
     )
   
-  # Save combined plot (adjusted dimensions for column layout)
-  combined_filename <- paste0(dataset_name, "_Combined_PCA_Views.pdf")
+  # Save combined plot
+  combined_filename <- paste0(dataset_name, "_Combined_PCA_Views_Enhanced.pdf")
   combined_filepath <- file.path(output_directory, combined_filename)
-  ggsave(combined_filepath, combined_plot, 
-         width = 10, height = 16,  # Changed from width = 16, height = 8 to width = 10, height = 16
+  ggsave(combined_filepath, combined_plot_with_legend, 
+         width = 11, height = 18,  # Slightly increased width
          device = cairo_pdf,
          dpi = 300,
          units = "in")
-  cat("Saved combined PCA views:", combined_filename, "\n")
+  cat("Saved enhanced combined PCA views:", combined_filename, "\n")
   
   return(list(
     pc_scores = pc_scores,
     var_explained = var_explained,
     pca_result = pca_result,
     pc1_pc2_plot = pc1_pc2_plot,
-    pc2_pc3_plot = pc2_pc3_plot,
-    combined_plot = combined_plot
+    pc2_pc3_plot = pc2_pc3_plot_with_legend,
+    combined_plot = combined_plot_with_legend
   ))
 }
 
+# =============================================================================
+# USAGE INSTRUCTIONS
+# =============================================================================
+# 
+# 1. Replace the existing create_additional_pca_plots function with this one
+# 2. Or rename this to create_additional_pca_plots_enhanced and call it separately
+# 3. Key changes:
+#    - Point size increased from 4 to 5
+#    - Base font size increased from 20 to 24
+#    - Axis titles increased from 22 to 26
+#    - Axis text increased from 18 to 22
+#    - Legend title increased from 24 to 28
+#    - Legend text increased from 22 to 26
+#    - Legend icon size increased to 2.5 lines
+#    - Only bottom plot has legend
+#    - Increased spacing throughout
 # =============================================================================
 # CREATE PCA SUMMARY PLOTS FIRST
 # =============================================================================
