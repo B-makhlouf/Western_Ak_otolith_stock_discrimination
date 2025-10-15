@@ -1,14 +1,15 @@
 library(magick)
 
+# ===== FIRST FIGURE: Basin Layout and Isoscape (2 rows) =====
 # File paths
 pdf_path <- "/Users/benjaminmakhlouf/Research_repos/04_Western_Ak_otolith_stock_discrimination/Figures/BasinLayout_Isoscape.pdf"
-jpg_path <- "/Users/benjaminmakhlouf/Research_repos/04_Western_Ak_otolith_stock_discrimination/Figures/BasinLayout.pdf"  # This is now a PDF
-output_path <- "/Users/benjaminmakhlouf/Research_repos/04_Western_Ak_otolith_stock_discrimination/Figures/BasinLayout_Isoscape_Combined_Labeled.pdf"
+jpg_path <- "/Users/benjaminmakhlouf/Research_repos/04_Western_Ak_otolith_stock_discrimination/Figures/BasinLayout.pdf"
+output_path1 <- "/Users/benjaminmakhlouf/Research_repos/04_Western_Ak_otolith_stock_discrimination/Figures/BasinLayout_Isoscape_Combined_Labeled.pdf"
 
 # Read BOTH as PDFs at the same density
 density <- 150
 img_pdf <- image_read_pdf(pdf_path, density = density, pages = 1)
-img_jpg <- image_read_pdf(jpg_path, density = density, pages = 1)  # Changed to image_read_pdf
+img_jpg <- image_read_pdf(jpg_path, density = density, pages = 1)
 
 # Get dimensions
 info_pdf <- image_info(img_pdf)
@@ -44,13 +45,53 @@ add_label_absolute <- function(img, label, size = 120, x_offset = 50, y_offset =
 label_size <- 75
 x_pos <- 50
 y_pos <- 50
-
 img_pdf_labeled <- add_label_absolute(img_pdf, "A", size = label_size, x_offset = x_pos, y_offset = y_pos)
 img_jpg_labeled <- add_label_absolute(img_jpg, "B", size = label_size, x_offset = x_pos, y_offset = y_pos)
 
 # Stack vertically
-combined <- image_append(c(img_pdf_labeled, img_jpg_labeled), stack = TRUE)
+combined1 <- image_append(c(img_pdf_labeled, img_jpg_labeled), stack = TRUE)
 
 # Save outputs
-image_write(combined, path = output_path, format = "pdf")
-image_write(combined, path = sub(".pdf", ".png", output_path), format = "png", quality = 100, density = 150)
+image_write(combined1, path = output_path1, format = "pdf")
+image_write(combined1, path = sub(".pdf", ".png", output_path1), format = "png", quality = 100, density = 150)
+print(paste("First combined figure saved to:", output_path1))
+
+
+# ===== SECOND FIGURE: PCA plots (1 row, 2 panels) =====
+# File paths for PCA figures
+pca_path1 <- "/Users/benjaminmakhlouf/Research_repos/04_Western_Ak_otolith_stock_discrimination/Figures/PCA/SAME_NO_7080_7085_2d_plots/SAME_NO_7080_7085_Combined_PCA_Views_Enhanced.pdf"
+pca_path2 <- "/Users/benjaminmakhlouf/Research_repos/04_Western_Ak_otolith_stock_discrimination/Figures/PCA/SAME_NO_7080_7085_ts_loadings/Specific_Four_Individuals_SAME_NO_7080_7085_Comparison.pdf"
+output_path2 <- "/Users/benjaminmakhlouf/Research_repos/04_Western_Ak_otolith_stock_discrimination/Figures/PCA_Combined_2Panel.pdf"
+
+# Read BOTH PDFs at the same density
+img_pca1 <- image_read_pdf(pca_path1, density = density, pages = 1)
+img_pca2 <- image_read_pdf(pca_path2, density = density, pages = 1)
+
+# Get dimensions
+info_pca1 <- image_info(img_pca1)
+info_pca2 <- image_info(img_pca2)
+
+# Decide on a target HEIGHT (for horizontal stacking, match heights)
+target_height <- max(info_pca1$height, info_pca2$height)
+
+# Resize BOTH images to the exact same height
+img_pca1 <- image_resize(img_pca1, geometry_size_pixels(height = target_height))
+img_pca2 <- image_resize(img_pca2, geometry_size_pixels(height = target_height))
+
+# Verify they're the same height now
+info_pca1 <- image_info(img_pca1)
+info_pca2 <- image_info(img_pca2)
+print(paste("PCA1 width:", info_pca1$width, "height:", info_pca1$height))
+print(paste("PCA2 width:", info_pca2$width, "height:", info_pca2$height))
+
+# Add labels (reusing the same function from above)
+img_pca1_labeled <- add_label_absolute(img_pca1, "A", size = label_size, x_offset = x_pos, y_offset = y_pos)
+img_pca2_labeled <- add_label_absolute(img_pca2, "B", size = label_size, x_offset = x_pos, y_offset = y_pos)
+
+# Stack HORIZONTALLY (stack = FALSE for side-by-side)
+combined2 <- image_append(c(img_pca1_labeled, img_pca2_labeled), stack = FALSE)
+
+# Save outputs
+image_write(combined2, path = output_path2, format = "pdf")
+image_write(combined2, path = sub(".pdf", ".png", output_path2), format = "png", quality = 100, density = 150)
+print(paste("Second combined figure saved to:", output_path2))
