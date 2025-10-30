@@ -36,14 +36,14 @@ gam_rf_overlap <- read.csv(gam_rf_overlap_file)
 
 # Add analysis labels
 gam_rf_total$Analysis <- "Total"
-gam_rf_overlap$Analysis <- "Overlapping"
+gam_rf_overlap$Analysis <- "Restricted"
 
 # Combine predictions
 combined_gam_rf <- bind_rows(gam_rf_total, gam_rf_overlap)
 
 cat("Loaded GAM RF predictions:\n")
 cat("Total analysis:", nrow(gam_rf_total), "predictions\n")
-cat("Overlapping analysis:", nrow(gam_rf_overlap), "predictions\n")
+cat("Restricted analysis:", nrow(gam_rf_overlap), "predictions\n")
 
 ################################################################################
 #### FUNCTION TO CREATE CONFUSION MATRIX DATA
@@ -85,7 +85,7 @@ create_confusion_data <- function(predictions, analysis_name) {
 
 # Create confusion matrix data for both analyses
 conf_total <- create_confusion_data(gam_rf_total, "Total")
-conf_overlap <- create_confusion_data(gam_rf_overlap, "Overlapping")
+conf_overlap <- create_confusion_data(gam_rf_overlap, "Restricted")
 combined_conf <- bind_rows(conf_total, conf_overlap)
 
 # Print summary of confusion matrix data
@@ -107,7 +107,7 @@ confusion_plot_counts <- ggplot(combined_conf, aes(x = .pred_class, y = fct_rev(
     name = "Classification"
   ) +
   facet_wrap(~Analysis, 
-             labeller = labeller(Analysis = c("Total" = "Total Analysis", "Overlapping" = "Overlapping Analysis"))) +
+             labeller = labeller(Analysis = c("Total" = "Total Analysis", "Restricted" = "Restricted Analysis"))) +
   labs(
     title = "Classification Confusion Matrices (Counts)",
     subtitle = "GAM Random Forest Model - Predicted vs. Actual",
@@ -147,7 +147,7 @@ confusion_plot_percentages <- ggplot(combined_conf, aes(x = .pred_class, y = fct
     name = "Classification"
   ) +
   facet_wrap(~Analysis, 
-             labeller = labeller(Analysis = c("Total" = "Total Analysis", "Overlapping" = "Overlapping Analysis"))) +
+             labeller = labeller(Analysis = c("Total" = "Total Analysis", "Restricted" = "Restricted Analysis"))) +
   labs(
     title = "Classification Confusion Matrices (Percentages)",
     subtitle = "GAM Random Forest Model - Predicted vs. Actual",
@@ -187,7 +187,7 @@ confusion_plot_combined <- ggplot(combined_conf, aes(x = .pred_class, y = fct_re
     name = "Classification"
   ) +
   facet_wrap(~Analysis, 
-             labeller = labeller(Analysis = c("Total" = "Total Analysis", "Overlapping" = "Overlapping Analysis"))) +
+             labeller = labeller(Analysis = c("Total" = "Total Analysis", "Restricted" = "Restricted Analysis"))) +
   labs(
     title = "Classification Confusion Matrices",
     subtitle = "GAM Random Forest Model - Predicted vs. Actual",

@@ -7,6 +7,7 @@
 # With direct line labeling like The Economist style
 # FIXED: Label overlap issue in TOTAL dataset plot
 # UPDATED: Increased label sizes for publication quality
+# UPDATED: Changed "OVERLAP" to "Restricted" throughout
 # =============================================================================
 
 library(tidyverse)
@@ -128,45 +129,45 @@ combined_line_data_total <- line_plot_data_total %>%
   )
 
 # =============================================================================
-# PROCESS OVERLAP DATASET
+# PROCESS RESTRICTED DATASET
 # =============================================================================
 
 cat("\n", paste(rep("=", 60), collapse = ""), "\n")
-cat("PROCESSING OVERLAP DATASET\n")
+cat("PROCESSING RESTRICTED DATASET\n")
 cat(paste(rep("=", 60), collapse = ""), "\n")
 
-# Load OVERLAP dataset predictions and calibration
-predictions_overlap <- read.csv(file.path(results_dir_overlap, "GAM_RF_OVERLAP_predictions.csv")) %>%
+# Load RESTRICTED dataset predictions and calibration
+predictions_restricted <- read.csv(file.path(results_dir_overlap, "GAM_RF_OVERLAP_predictions.csv")) %>%
   mutate(Watershed = as.factor(Watershed), .pred_class = as.factor(.pred_class))
 
-calibration_overlap <- readRDS(file.path(calibrated_models_dir, "GAM_RF_OVERLAP_calibration.rds"))
+calibration_restricted <- readRDS(file.path(calibrated_models_dir, "GAM_RF_OVERLAP_calibration.rds"))
 
-# Apply calibration to OVERLAP dataset
-calibrated_predictions_overlap <- cal_apply(predictions_overlap, calibration_overlap)
+# Apply calibration to RESTRICTED dataset
+calibrated_predictions_restricted <- cal_apply(predictions_restricted, calibration_restricted)
 
-cat("Total samples:", nrow(calibrated_predictions_overlap), "\n")
-cat("Watersheds:", table(calibrated_predictions_overlap$Watershed), "\n")
+cat("Total samples:", nrow(calibrated_predictions_restricted), "\n")
+cat("Watersheds:", table(calibrated_predictions_restricted$Watershed), "\n")
 
-# Get prediction probability columns for OVERLAP
-pred_cols_overlap <- grep("^\\.pred_", colnames(calibrated_predictions_overlap), value = TRUE)
-pred_cols_overlap <- pred_cols_overlap[pred_cols_overlap != ".pred_class"]  # Remove .pred_class if it exists
-cat("Prediction probability columns:", pred_cols_overlap, "\n")
+# Get prediction probability columns for RESTRICTED
+pred_cols_restricted <- grep("^\\.pred_", colnames(calibrated_predictions_restricted), value = TRUE)
+pred_cols_restricted <- pred_cols_restricted[pred_cols_restricted != ".pred_class"]  # Remove .pred_class if it exists
+cat("Prediction probability columns:", pred_cols_restricted, "\n")
 
-# Extract maximum probabilities and predictions for OVERLAP
-sample_results_overlap <- calibrated_predictions_overlap %>%
-  select(Watershed, all_of(pred_cols_overlap)) %>%
+# Extract maximum probabilities and predictions for RESTRICTED
+sample_results_restricted <- calibrated_predictions_restricted %>%
+  select(Watershed, all_of(pred_cols_restricted)) %>%
   mutate(
     # Extract probabilities for each watershed
-    prob1 = .[[pred_cols_overlap[1]]],
-    prob2 = .[[pred_cols_overlap[2]]],
-    prob3 = .[[pred_cols_overlap[3]]],
+    prob1 = .[[pred_cols_restricted[1]]],
+    prob2 = .[[pred_cols_restricted[2]]],
+    prob3 = .[[pred_cols_restricted[3]]],
     # Find max probability
     Max_Probability = pmax(prob1, prob2, prob3, na.rm = TRUE),
     # Find predicted watershed
     Predicted_Watershed = case_when(
-      prob1 == Max_Probability ~ gsub("\\.pred_", "", pred_cols_overlap[1]),
-      prob2 == Max_Probability ~ gsub("\\.pred_", "", pred_cols_overlap[2]),
-      prob3 == Max_Probability ~ gsub("\\.pred_", "", pred_cols_overlap[3]),
+      prob1 == Max_Probability ~ gsub("\\.pred_", "", pred_cols_restricted[1]),
+      prob2 == Max_Probability ~ gsub("\\.pred_", "", pred_cols_restricted[2]),
+      prob3 == Max_Probability ~ gsub("\\.pred_", "", pred_cols_restricted[3]),
       TRUE ~ "Unknown"
     ),
     # Check correctness
@@ -174,16 +175,16 @@ sample_results_overlap <- calibrated_predictions_overlap %>%
   ) %>%
   select(Watershed, Predicted_Watershed, Max_Probability, Correct)
 
-cat("Overall accuracy for OVERLAP:", round(mean(sample_results_overlap$Correct), 3), "\n")
+cat("Overall accuracy for RESTRICTED:", round(mean(sample_results_restricted$Correct), 3), "\n")
 
-# Calculate threshold performance for OVERLAP dataset
-threshold_results_overlap <- map_dfr(thresholds, function(thresh) {
+# Calculate threshold performance for RESTRICTED dataset
+threshold_results_restricted <- map_dfr(thresholds, function(thresh) {
   
   # For each watershed, see how many samples are above threshold AND correct
   watershed_results <- map_dfr(c("Kusko", "Nush", "Yukon"), function(ws) {
     
     # Get samples for this watershed
-    watershed_samples <- sample_results_overlap %>% filter(Watershed == ws)
+    watershed_samples <- sample_results_restricted %>% filter(Watershed == ws)
     
     # Find samples above threshold AND correct
     above_threshold_correct <- watershed_samples %>% 
@@ -201,13 +202,13 @@ threshold_results_overlap <- map_dfr(thresholds, function(thresh) {
   return(watershed_results)
 })
 
-# Prepare line plot data for OVERLAP
-line_plot_data_overlap <- threshold_results_overlap %>%
+# Prepare line plot data for RESTRICTED
+line_plot_data_restricted <- threshold_results_restricted %>%
   select(Threshold, Watershed, Percent_Correct_Above_Threshold) %>%
   mutate(Threshold_Percent = Threshold * 100)
 
-# Calculate average performance across all watersheds for OVERLAP
-average_performance_overlap <- line_plot_data_overlap %>%
+# Calculate average performance across all watersheds for RESTRICTED
+average_performance_restricted <- line_plot_data_restricted %>%
   group_by(Threshold, Threshold_Percent) %>%
   summarise(
     Average_Performance = mean(Percent_Correct_Above_Threshold, na.rm = TRUE),
@@ -215,11 +216,11 @@ average_performance_overlap <- line_plot_data_overlap %>%
   ) %>%
   mutate(Watershed = "Average")
 
-# Combine watershed data with average for OVERLAP
-combined_line_data_overlap <- line_plot_data_overlap %>%
+# Combine watershed data with average for RESTRICTED
+combined_line_data_restricted <- line_plot_data_restricted %>%
   select(Threshold, Threshold_Percent, Watershed, Performance = Percent_Correct_Above_Threshold) %>%
   bind_rows(
-    average_performance_overlap %>%
+    average_performance_restricted %>%
       select(Threshold, Threshold_Percent, Watershed, Performance = Average_Performance)
   )
 
@@ -294,7 +295,7 @@ plot_total <- ggplot(combined_line_data_total, aes(x = Threshold_Percent, y = Pe
   ) +
   # Clean, minimal labels
   labs(
-    title = "TOTAL Dataset",
+    title = "Total Dataset",
     x = "Probability Threshold",
     y = "Classification Accuracy"
   ) +
@@ -340,11 +341,11 @@ plot_total <- ggplot(combined_line_data_total, aes(x = Threshold_Percent, y = Pe
   )
 
 # =============================================================================
-# CREATE OVERLAP DATASET PLOT
+# CREATE RESTRICTED DATASET PLOT
 # =============================================================================
 
 # Create labels for the end of lines with adjusted positions to avoid overlap
-end_labels_overlap <- combined_line_data_overlap %>% 
+end_labels_restricted <- combined_line_data_restricted %>% 
   filter(Threshold_Percent == 90) %>%
   mutate(
     # Adjust y positions to prevent overlap
@@ -355,14 +356,14 @@ end_labels_overlap <- combined_line_data_overlap %>%
     )
   )
 
-plot_overlap <- ggplot(combined_line_data_overlap, aes(x = Threshold_Percent, y = Performance, 
-                                                       color = Watershed, linetype = Watershed)) +
+plot_restricted <- ggplot(combined_line_data_restricted, aes(x = Threshold_Percent, y = Performance, 
+                                                             color = Watershed, linetype = Watershed)) +
   # Simple, clean lines
   geom_line(linewidth = 1.8, alpha = 0.9) +
   # Simple points
   geom_point(size = 3, alpha = 0.9) +
   # Add labels at the end of each line - increased size with adjusted positions
-  geom_text(data = end_labels_overlap,
+  geom_text(data = end_labels_restricted,
             aes(label = Watershed, x = Threshold_Percent + 1.5, y = label_y, color = Watershed),
             hjust = 0, size = 6.5, fontface = "bold", show.legend = FALSE) +
   # Scales
@@ -382,7 +383,7 @@ plot_overlap <- ggplot(combined_line_data_overlap, aes(x = Threshold_Percent, y 
   ) +
   # Clean, minimal labels
   labs(
-    title = "OVERLAP Dataset",
+    title = "Restricted Dataset",
     x = "Probability Threshold",
     y = "Classification Accuracy"
   ) +
@@ -408,7 +409,7 @@ plot_overlap <- ggplot(combined_line_data_overlap, aes(x = Threshold_Percent, y 
       color = "#999999", margin = margin(t = 15)
     ),
     axis.title.x = element_text(
-      size = 16, color = "#666666", 
+      size = 16, color = "#666666",face = "bold",
       margin = margin(t = 10)
     ),
     axis.title.y = element_text(
@@ -432,11 +433,10 @@ plot_overlap <- ggplot(combined_line_data_overlap, aes(x = Threshold_Percent, y 
 # =============================================================================
 
 # Combine plots using patchwork
-combined_plot <- plot_total + plot_overlap + 
+combined_plot <- plot_total + plot_restricted + 
   plot_layout(ncol = 2) +
   plot_annotation(
     title = "Watershed Classification Performance Across Probability Thresholds",
-    subtitle = "GAM Random Forest Model • Accuracy comparison between TOTAL and OVERLAP datasets",
     theme = theme(
       plot.title = element_text(hjust = 0.5, size = 24, face = "bold", color = "#2E2E2E"),
       plot.subtitle = element_text(hjust = 0.5, size = 18, color = "#666666"),
@@ -453,8 +453,8 @@ ggsave(file.path(output_dir, "GAM_RF_TOTAL_Performance_Line_Plot.png"),
        plot_total, width = 12, height = 8, dpi = 300, bg = "white", 
        device = "png", type = "cairo")
 
-ggsave(file.path(output_dir, "GAM_RF_OVERLAP_Performance_Line_Plot.png"), 
-       plot_overlap, width = 12, height = 8, dpi = 300, bg = "white",
+ggsave(file.path(output_dir, "GAM_RF_Restricted_Performance_Line_Plot.png"), 
+       plot_restricted, width = 12, height = 8, dpi = 300, bg = "white",
        device = "png", type = "cairo")
 
 # Save combined two-panel figure
@@ -468,9 +468,9 @@ ggsave(file.path(output_dir, "GAM_RF_Combined_Performance_Line_Plot.png"),
 
 cat("\n🎉 ALL PLOTS COMPLETE!\n")
 cat(paste(rep("=", 60), collapse = ""), "\n")
-cat("Performance line plots created for TOTAL and OVERLAP datasets\n")
+cat("Performance line plots created for TOTAL and Restricted datasets\n")
 cat("✅ TOTAL plot saved:", "GAM_RF_TOTAL_Performance_Line_Plot.png\n")
-cat("✅ OVERLAP plot saved:", "GAM_RF_OVERLAP_Performance_Line_Plot.png\n")
+cat("✅ Restricted plot saved:", "GAM_RF_Restricted_Performance_Line_Plot.png\n")
 cat("✅ COMBINED plot saved:", "GAM_RF_Combined_Performance_Line_Plot.png\n")
 cat("📁 Location:", output_dir, "\n")
 cat("📝 Features: Direct line labeling, Economist-style theme, clean layout, two-panel combined figure\n")
