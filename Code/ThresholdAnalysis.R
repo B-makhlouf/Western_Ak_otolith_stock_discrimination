@@ -1,234 +1,238 @@
 # =============================================================================
-# WATERSHED PERFORMANCE LINE PLOT - PROBABILITY THRESHOLDS
+# COMBINED CALIBRATION AND THRESHOLD ANALYSIS
 # =============================================================================
-# Creates line plot showing performance (accuracy) changes from 60-90% thresholds
-# Separate lines for each watershed plus average line
-# Linear script - no functions for easy line-by-line execution
-# With direct line labeling like The Economist style
-# FIXED: Label overlap issue in TOTAL dataset plot
-# UPDATED: Increased label sizes for publication quality
-# UPDATED: Changed "OVERLAP" to "Restricted" throughout
+# Calibrates Random Forest model probabilities and evaluates threshold performance
 # =============================================================================
 
-library(tidyverse)
+library(tidymodels)
 library(probably)
+library(tidyverse)
+library(yardstick)
+library(cowplot)
 library(ggplot2)
 library(scales)
 library(patchwork)
 
+options(dplyr.summarise.inform = FALSE)
+options(tidymodels.quiet = TRUE)
+
 # =============================================================================
-# SETUP PATHS AND DIRECTORIES
+# CONFIGURATION
 # =============================================================================
 
-# Paths
-calibrated_models_dir <- "/Users/benjaminmakhlouf/Research_repos/04_Western_Ak_otolith_stock_discrimination/data/CalibratedModels"
+# Models to process
+data_types <- c("RAW", "GAM", "MA")
+analyses <- c("TOTAL", "OVERLAP")
+
+# Input directories
 results_dir_total <- "/Users/benjaminmakhlouf/Research_repos/04_Western_Ak_otolith_stock_discrimination/Output/ModelResultsPreCal/Total"
 results_dir_overlap <- "/Users/benjaminmakhlouf/Research_repos/04_Western_Ak_otolith_stock_discrimination/Output/ModelResultsPreCal/Filtered"
-output_dir <- "/Users/benjaminmakhlouf/Research_repos/04_Western_Ak_otolith_stock_discrimination/Figures/ProbabilityDistributions"
 
-# Create output directory
+# Output directory
+output_dir <- "/Users/benjaminmakhlouf/Research_repos/04_Western_Ak_otolith_stock_discrimination/Figures/Calibration Figures"
+calibrated_models_dir <- file.path(output_dir, "CalibratedModels")
+
+# Create directories
 dir.create(output_dir, recursive = TRUE, showWarnings = FALSE)
+dir.create(calibrated_models_dir, recursive = TRUE, showWarnings = FALSE)
 
-# =============================================================================
-# PROCESS TOTAL DATASET
-# =============================================================================
-
-cat("\n", paste(rep("=", 60), collapse = ""), "\n")
-cat("PROCESSING TOTAL DATASET\n")
-cat(paste(rep("=", 60), collapse = ""), "\n")
-
-# Load TOTAL dataset predictions and calibration
-predictions_total <- read.csv(file.path(results_dir_total, "GAM_RF_TOTAL_predictions.csv")) %>%
-  mutate(Watershed = as.factor(Watershed), .pred_class = as.factor(.pred_class))
-
-calibration_total <- readRDS(file.path(calibrated_models_dir, "GAM_RF_TOTAL_calibration.rds"))
-
-# Apply calibration to TOTAL dataset
-calibrated_predictions_total <- cal_apply(predictions_total, calibration_total)
-
-cat("Total samples:", nrow(calibrated_predictions_total), "\n")
-cat("Watersheds:", table(calibrated_predictions_total$Watershed), "\n")
-
-# Get prediction probability columns for TOTAL
-pred_cols_total <- grep("^\\.pred_", colnames(calibrated_predictions_total), value = TRUE)
-pred_cols_total <- pred_cols_total[pred_cols_total != ".pred_class"]  # Remove .pred_class if it exists
-cat("Prediction probability columns:", pred_cols_total, "\n")
-
-# Extract maximum probabilities and predictions for TOTAL
-sample_results_total <- calibrated_predictions_total %>%
-  select(Watershed, all_of(pred_cols_total)) %>%
-  mutate(
-    # Extract probabilities for each watershed
-    prob1 = .[[pred_cols_total[1]]],
-    prob2 = .[[pred_cols_total[2]]],
-    prob3 = .[[pred_cols_total[3]]],
-    # Find max probability
-    Max_Probability = pmax(prob1, prob2, prob3, na.rm = TRUE),
-    # Find predicted watershed
-    Predicted_Watershed = case_when(
-      prob1 == Max_Probability ~ gsub("\\.pred_", "", pred_cols_total[1]),
-      prob2 == Max_Probability ~ gsub("\\.pred_", "", pred_cols_total[2]),
-      prob3 == Max_Probability ~ gsub("\\.pred_", "", pred_cols_total[3]),
-      TRUE ~ "Unknown"
-    ),
-    # Check correctness
-    Correct = (as.character(Watershed) == Predicted_Watershed)
-  ) %>%
-  select(Watershed, Predicted_Watershed, Max_Probability, Correct)
-
-cat("Overall accuracy for TOTAL:", round(mean(sample_results_total$Correct), 3), "\n")
-
-# Define thresholds from 60% to 90% by 5% increments
+# Probability thresholds
 thresholds <- c(0.6, 0.65, 0.7, 0.75, 0.8, 0.85, 0.9)
 
-# Calculate threshold performance for TOTAL dataset
-threshold_results_total <- map_dfr(thresholds, function(thresh) {
+# =============================================================================
+# CALIBRATION FUNCTION
+# =============================================================================
+
+calibrate_rf_model <- function(data_type, analysis) {
   
-  # For each watershed, see how many samples are above threshold AND correct
-  watershed_results <- map_dfr(c("Kusko", "Nush", "Yukon"), function(ws) {
-    
-    # Get samples for this watershed
-    watershed_samples <- sample_results_total %>% filter(Watershed == ws)
-    
-    # Find samples above threshold AND correct
-    above_threshold_correct <- watershed_samples %>% 
-      filter(Max_Probability >= thresh, Correct == TRUE)
-    
-    data.frame(
-      Threshold = thresh,
-      Watershed = ws,
-      Total_Samples = nrow(watershed_samples),
-      Above_Threshold_Correct = nrow(above_threshold_correct),
-      Percent_Correct_Above_Threshold = round(nrow(above_threshold_correct) / nrow(watershed_samples) * 100, 1)
-    )
+  # Load predictions
+  results_dir <- if (analysis == "TOTAL") results_dir_total else results_dir_overlap
+  pred_file <- file.path(results_dir, paste0(data_type, "_RF_", analysis, "_predictions.csv"))
+  
+  if (!file.exists(pred_file)) {
+    return(NULL)
+  }
+  
+  predictions <- read.csv(pred_file, stringsAsFactors = FALSE) %>%
+    mutate(Watershed = as.factor(Watershed), 
+           .pred_class = as.factor(.pred_class))
+  
+  # Calculate pre-calibration metrics
+  prob_cols <- predictions %>% 
+    select(starts_with(".pred_")) %>% 
+    select(-any_of(".pred_class"))
+  
+  before_log_loss <- mn_log_loss_vec(predictions$Watershed, as.matrix(prob_cols))
+  before_brier <- brier_class_vec(predictions$Watershed, as.matrix(prob_cols))
+  
+  # Create before plot
+  beforecal <- cal_plot_windowed(predictions, truth = Watershed, 
+                                 window_size = 0.3, step_size = 0.02) +
+    labs(title = "Before Calibration") + 
+    theme_minimal() +
+    theme(plot.title = element_text(hjust = 0.5, face = "bold", size = 14), 
+          legend.position = "bottom")
+  
+  # Perform calibration
+  calibration <- cal_estimate_multinomial(predictions, truth = Watershed, 
+                                          estimate = starts_with(".pred_"), 
+                                          method = "isotonic")
+  
+  calibrated_predictions <- cal_apply(predictions, calibration)
+  
+  # Calculate post-calibration metrics
+  prob_cols_after <- calibrated_predictions %>% 
+    select(starts_with(".pred_")) %>% 
+    select(-any_of(".pred_class"))
+  
+  after_log_loss <- mn_log_loss_vec(calibrated_predictions$Watershed, 
+                                    as.matrix(prob_cols_after))
+  after_brier <- brier_class_vec(calibrated_predictions$Watershed, 
+                                 as.matrix(prob_cols_after))
+  
+  # Create after plot
+  aftercal <- cal_plot_windowed(calibrated_predictions, truth = Watershed, 
+                                window_size = 0.3, step_size = 0.02) +
+    labs(title = "After Calibration") + 
+    theme_minimal() +
+    theme(plot.title = element_text(hjust = 0.5, face = "bold", size = 14), 
+          legend.position = "bottom")
+  
+  # Combine plots
+  combined_plot <- plot_grid(beforecal, aftercal, ncol = 2, labels = c("A", "B"))
+  title <- ggdraw() + 
+    draw_label(paste("RF Calibration:", data_type, "-", analysis), 
+               fontface = "bold", size = 16)
+  final_plot <- plot_grid(title, combined_plot, ncol = 1, rel_heights = c(0.1, 0.9))
+  
+  # Save figure
+  ggsave(file.path(output_dir, paste0("RF_Calibration_", data_type, "_", analysis, ".png")), 
+         final_plot, width = 12, height = 6, dpi = 300, bg = "white")
+  
+  # Save calibration mapping
+  saveRDS(calibration, file.path(calibrated_models_dir, 
+                                 paste0(data_type, "_RF_", analysis, "_calibration.rds")))
+  
+  # Return results
+  return(data.frame(
+    Data_Type = data_type, 
+    Analysis = analysis,
+    Before_Log_Loss = before_log_loss, 
+    After_Log_Loss = after_log_loss, 
+    Log_Loss_Improvement = before_log_loss - after_log_loss,
+    Before_Brier = before_brier, 
+    After_Brier = after_brier, 
+    Brier_Improvement = before_brier - after_brier,
+    stringsAsFactors = FALSE
+  ))
+}
+
+# =============================================================================
+# THRESHOLD ANALYSIS FUNCTION
+# =============================================================================
+
+threshold_analysis <- function(data_type, analysis) {
+  
+  # Load predictions
+  results_dir <- if (analysis == "TOTAL") results_dir_total else results_dir_overlap
+  pred_file <- file.path(results_dir, paste0(data_type, "_RF_", analysis, "_predictions.csv"))
+  
+  if (!file.exists(pred_file)) {
+    return(NULL)
+  }
+  
+  # Load calibration
+  calibration_file <- file.path(calibrated_models_dir, 
+                                paste0(data_type, "_RF_", analysis, "_calibration.rds"))
+  
+  if (!file.exists(calibration_file)) {
+    return(NULL)
+  }
+  
+  predictions <- read.csv(pred_file, stringsAsFactors = FALSE) %>%
+    mutate(Watershed = as.factor(Watershed), 
+           .pred_class = as.factor(.pred_class))
+  
+  calibration <- readRDS(calibration_file)
+  calibrated_predictions <- cal_apply(predictions, calibration)
+  
+  # Get prediction columns
+  pred_cols <- grep("^\\.pred_", colnames(calibrated_predictions), value = TRUE)
+  pred_cols <- pred_cols[pred_cols != ".pred_class"]
+  
+  # Extract max probabilities and predictions
+  sample_results <- calibrated_predictions %>%
+    select(Watershed, all_of(pred_cols)) %>%
+    mutate(
+      prob1 = .[[pred_cols[1]]],
+      prob2 = .[[pred_cols[2]]],
+      prob3 = .[[pred_cols[3]]],
+      Max_Probability = pmax(prob1, prob2, prob3, na.rm = TRUE),
+      Predicted_Watershed = case_when(
+        prob1 == Max_Probability ~ gsub("\\.pred_", "", pred_cols[1]),
+        prob2 == Max_Probability ~ gsub("\\.pred_", "", pred_cols[2]),
+        prob3 == Max_Probability ~ gsub("\\.pred_", "", pred_cols[3]),
+        TRUE ~ "Unknown"
+      ),
+      Correct = (as.character(Watershed) == Predicted_Watershed)
+    ) %>%
+    select(Watershed, Predicted_Watershed, Max_Probability, Correct)
+  
+  # Calculate threshold performance
+  threshold_results <- map_dfr(thresholds, function(thresh) {
+    watershed_results <- map_dfr(c("Kusko", "Nush", "Yukon"), function(ws) {
+      watershed_samples <- sample_results %>% filter(Watershed == ws)
+      above_threshold_correct <- watershed_samples %>% 
+        filter(Max_Probability >= thresh, Correct == TRUE)
+      
+      data.frame(
+        Threshold = thresh,
+        Watershed = ws,
+        Total_Samples = nrow(watershed_samples),
+        Above_Threshold_Correct = nrow(above_threshold_correct),
+        Percent_Correct_Above_Threshold = round(
+          nrow(above_threshold_correct) / nrow(watershed_samples) * 100, 1
+        )
+      )
+    })
+    return(watershed_results)
   })
   
-  return(watershed_results)
-})
-
-# Prepare line plot data for TOTAL
-line_plot_data_total <- threshold_results_total %>%
-  select(Threshold, Watershed, Percent_Correct_Above_Threshold) %>%
-  mutate(Threshold_Percent = Threshold * 100)
-
-# Calculate average performance across all watersheds for TOTAL
-average_performance_total <- line_plot_data_total %>%
-  group_by(Threshold, Threshold_Percent) %>%
-  summarise(
-    Average_Performance = mean(Percent_Correct_Above_Threshold, na.rm = TRUE),
-    .groups = "drop"
-  ) %>%
-  mutate(Watershed = "Average")
-
-# Combine watershed data with average for TOTAL
-combined_line_data_total <- line_plot_data_total %>%
-  select(Threshold, Threshold_Percent, Watershed, Performance = Percent_Correct_Above_Threshold) %>%
-  bind_rows(
-    average_performance_total %>%
-      select(Threshold, Threshold_Percent, Watershed, Performance = Average_Performance)
-  )
-
-# =============================================================================
-# PROCESS RESTRICTED DATASET
-# =============================================================================
-
-cat("\n", paste(rep("=", 60), collapse = ""), "\n")
-cat("PROCESSING RESTRICTED DATASET\n")
-cat(paste(rep("=", 60), collapse = ""), "\n")
-
-# Load RESTRICTED dataset predictions and calibration
-predictions_restricted <- read.csv(file.path(results_dir_overlap, "GAM_RF_OVERLAP_predictions.csv")) %>%
-  mutate(Watershed = as.factor(Watershed), .pred_class = as.factor(.pred_class))
-
-calibration_restricted <- readRDS(file.path(calibrated_models_dir, "GAM_RF_OVERLAP_calibration.rds"))
-
-# Apply calibration to RESTRICTED dataset
-calibrated_predictions_restricted <- cal_apply(predictions_restricted, calibration_restricted)
-
-cat("Total samples:", nrow(calibrated_predictions_restricted), "\n")
-cat("Watersheds:", table(calibrated_predictions_restricted$Watershed), "\n")
-
-# Get prediction probability columns for RESTRICTED
-pred_cols_restricted <- grep("^\\.pred_", colnames(calibrated_predictions_restricted), value = TRUE)
-pred_cols_restricted <- pred_cols_restricted[pred_cols_restricted != ".pred_class"]  # Remove .pred_class if it exists
-cat("Prediction probability columns:", pred_cols_restricted, "\n")
-
-# Extract maximum probabilities and predictions for RESTRICTED
-sample_results_restricted <- calibrated_predictions_restricted %>%
-  select(Watershed, all_of(pred_cols_restricted)) %>%
-  mutate(
-    # Extract probabilities for each watershed
-    prob1 = .[[pred_cols_restricted[1]]],
-    prob2 = .[[pred_cols_restricted[2]]],
-    prob3 = .[[pred_cols_restricted[3]]],
-    # Find max probability
-    Max_Probability = pmax(prob1, prob2, prob3, na.rm = TRUE),
-    # Find predicted watershed
-    Predicted_Watershed = case_when(
-      prob1 == Max_Probability ~ gsub("\\.pred_", "", pred_cols_restricted[1]),
-      prob2 == Max_Probability ~ gsub("\\.pred_", "", pred_cols_restricted[2]),
-      prob3 == Max_Probability ~ gsub("\\.pred_", "", pred_cols_restricted[3]),
-      TRUE ~ "Unknown"
-    ),
-    # Check correctness
-    Correct = (as.character(Watershed) == Predicted_Watershed)
-  ) %>%
-  select(Watershed, Predicted_Watershed, Max_Probability, Correct)
-
-cat("Overall accuracy for RESTRICTED:", round(mean(sample_results_restricted$Correct), 3), "\n")
-
-# Calculate threshold performance for RESTRICTED dataset
-threshold_results_restricted <- map_dfr(thresholds, function(thresh) {
+  # Prepare plot data
+  line_plot_data <- threshold_results %>%
+    select(Threshold, Watershed, Percent_Correct_Above_Threshold) %>%
+    mutate(Threshold_Percent = Threshold * 100)
   
-  # For each watershed, see how many samples are above threshold AND correct
-  watershed_results <- map_dfr(c("Kusko", "Nush", "Yukon"), function(ws) {
-    
-    # Get samples for this watershed
-    watershed_samples <- sample_results_restricted %>% filter(Watershed == ws)
-    
-    # Find samples above threshold AND correct
-    above_threshold_correct <- watershed_samples %>% 
-      filter(Max_Probability >= thresh, Correct == TRUE)
-    
-    data.frame(
-      Threshold = thresh,
-      Watershed = ws,
-      Total_Samples = nrow(watershed_samples),
-      Above_Threshold_Correct = nrow(above_threshold_correct),
-      Percent_Correct_Above_Threshold = round(nrow(above_threshold_correct) / nrow(watershed_samples) * 100, 1)
+  # Calculate average
+  average_performance <- line_plot_data %>%
+    group_by(Threshold, Threshold_Percent) %>%
+    summarise(
+      Average_Performance = mean(Percent_Correct_Above_Threshold, na.rm = TRUE),
+      .groups = "drop"
+    ) %>%
+    mutate(Watershed = "Average")
+  
+  # Combine data
+  combined_line_data <- line_plot_data %>%
+    select(Threshold, Threshold_Percent, Watershed, 
+           Performance = Percent_Correct_Above_Threshold) %>%
+    bind_rows(
+      average_performance %>%
+        select(Threshold, Threshold_Percent, Watershed, Performance = Average_Performance)
     )
-  })
   
-  return(watershed_results)
-})
-
-# Prepare line plot data for RESTRICTED
-line_plot_data_restricted <- threshold_results_restricted %>%
-  select(Threshold, Watershed, Percent_Correct_Above_Threshold) %>%
-  mutate(Threshold_Percent = Threshold * 100)
-
-# Calculate average performance across all watersheds for RESTRICTED
-average_performance_restricted <- line_plot_data_restricted %>%
-  group_by(Threshold, Threshold_Percent) %>%
-  summarise(
-    Average_Performance = mean(Percent_Correct_Above_Threshold, na.rm = TRUE),
-    .groups = "drop"
-  ) %>%
-  mutate(Watershed = "Average")
-
-# Combine watershed data with average for RESTRICTED
-combined_line_data_restricted <- line_plot_data_restricted %>%
-  select(Threshold, Threshold_Percent, Watershed, Performance = Percent_Correct_Above_Threshold) %>%
-  bind_rows(
-    average_performance_restricted %>%
-      select(Threshold, Threshold_Percent, Watershed, Performance = Average_Performance)
-  )
+  return(list(
+    threshold_results = threshold_results,
+    line_plot_data = combined_line_data,
+    sample_results = sample_results
+  ))
+}
 
 # =============================================================================
-# DEFINE PLOT STYLING
+# THRESHOLD PLOT STYLING
 # =============================================================================
 
-# Define colors inspired by The Economist style
+# Economist-style colors
 watershed_colors <- c(
   "Kusko" = "#E3120B",      # Economist red
   "Nush" = "#00847E",       # Economist teal  
@@ -244,233 +248,224 @@ line_types <- c(
 )
 
 # =============================================================================
-# CREATE TOTAL DATASET PLOT - FIXED LABEL POSITIONING
+# MAIN EXECUTION
 # =============================================================================
 
-# Create labels for the end of lines - use actual line positions but adjust x position to avoid overlap
-end_labels_total <- combined_line_data_total %>% 
-  filter(Threshold_Percent == 90) %>%
-  mutate(
-    # Stagger both x and y positions to prevent overlap
-    label_x = case_when(
-      Watershed == "Yukon" ~ 91.2,      # Yukon slightly further right
-      Watershed == "Nush" ~ 91.8,       # Nush further right to avoid overlap
-      Watershed == "Average" ~ 91.5,    # Average in middle
-      Watershed == "Kusko" ~ 91.0,      # Kusko closest
-      TRUE ~ 91.5
-    ),
-    label_y = case_when(
-      Watershed == "Yukon" ~ Performance,        # Keep Yukon at line position
-      Watershed == "Nush" ~ Performance - 1.5,   # Move Nush down slightly
-      Watershed == "Average" ~ Performance + 1,  # Move Average up slightly
-      Watershed == "Kusko" ~ Performance,        # Keep Kusko at line position
-      TRUE ~ Performance
+cat("\n=== CALIBRATION AND THRESHOLD ANALYSIS ===\n\n")
+
+# STEP 1: Calibrate all models
+cat("Step 1: Calibrating RF models...\n")
+
+calibration_results <- map_dfr(analyses, function(analysis) {
+  map_dfr(data_types, function(data_type) {
+    calibrate_rf_model(data_type, analysis)
+  })
+})
+
+write.csv(calibration_results, 
+          file.path(output_dir, "RF_Calibration_Summary.csv"), 
+          row.names = FALSE)
+
+cat("  Calibrated", nrow(calibration_results), "models\n\n")
+
+# STEP 2: Threshold analysis
+cat("Step 2: Analyzing threshold performance...\n")
+
+threshold_results_list <- list()
+threshold_results_list$GAM_TOTAL <- threshold_analysis("GAM", "TOTAL")
+threshold_results_list$GAM_OVERLAP <- threshold_analysis("GAM", "OVERLAP")
+
+cat("  Threshold analysis complete\n\n")
+
+# STEP 3: Create figures
+cat("Step 3: Generating figures...\n")
+
+if (!is.null(threshold_results_list$GAM_TOTAL) && 
+    !is.null(threshold_results_list$GAM_OVERLAP)) {
+  
+  # Get data for plots
+  data_total <- threshold_results_list$GAM_TOTAL$line_plot_data
+  data_restricted <- threshold_results_list$GAM_OVERLAP$line_plot_data
+  
+  # ============================================================================
+  # CREATE TOTAL DATASET PLOT
+  # ============================================================================
+  
+  # Create labels with staggered positions
+  end_labels_total <- data_total %>% 
+    filter(Threshold_Percent == 90) %>%
+    mutate(
+      label_x = case_when(
+        Watershed == "Yukon" ~ 91.2,
+        Watershed == "Nush" ~ 91.8,
+        Watershed == "Average" ~ 91.5,
+        Watershed == "Kusko" ~ 91.0,
+        TRUE ~ 91.5
+      ),
+      label_y = case_when(
+        Watershed == "Yukon" ~ Performance,
+        Watershed == "Nush" ~ Performance - 1.5,
+        Watershed == "Average" ~ Performance + 1,
+        Watershed == "Kusko" ~ Performance,
+        TRUE ~ Performance
+      )
     )
-  )
-
-plot_total <- ggplot(combined_line_data_total, aes(x = Threshold_Percent, y = Performance, 
-                                                   color = Watershed, linetype = Watershed)) +
-  # Simple, clean lines
-  geom_line(linewidth = 1.8, alpha = 0.9) +
-  # Simple points
-  geom_point(size = 3, alpha = 0.9) +
-  # Add labels at the end of each line - staggered horizontally to avoid overlap
-  geom_text(data = end_labels_total,
-            aes(label = Watershed, x = label_x, y = label_y, color = Watershed),
-            hjust = 0, size = 6.5, fontface = "bold", show.legend = FALSE) +
-  # Scales
-  scale_color_manual(values = watershed_colors) +
-  scale_linetype_manual(values = line_types) +
-  scale_x_continuous(
-    breaks = seq(60, 90, 5),
-    labels = function(x) paste0(x, "%"),
-    limits = c(60, 100),  # Extended to make room for labels
-    expand = c(0, 0)
-  ) +
-  scale_y_continuous(
-    breaks = seq(50, 100, 10),
-    labels = function(x) paste0(x, "%"),
-    limits = c(50, 100),
-    expand = c(0, 0)
-  ) +
-  # Clean, minimal labels
-  labs(
-    title = "Total Dataset",
-    x = "Probability Threshold",
-    y = "Classification Accuracy"
-  ) +
-  # Clean, Economist-style theme
-  theme_minimal(base_size = 16) +
-  theme(
-    # Clean white background
-    plot.background = element_rect(fill = "white", color = NA),
-    panel.background = element_rect(fill = "white", color = NA),
-    # Subtle grid - only major horizontal lines
-    panel.grid.major.x = element_blank(),
-    panel.grid.major.y = element_line(color = "#E5E5E5", linewidth = 0.3),
-    panel.grid.minor = element_blank(),
-    # No panel border
-    panel.border = element_blank(),
-    # Clean typography
-    plot.title = element_text(
-      hjust = 0, size = 20, face = "bold", 
-      color = "#2E2E2E", margin = margin(b = 15)
-    ),
-    plot.caption = element_text(
-      hjust = 0, size = 9, 
-      color = "#999999", margin = margin(t = 15)
-    ),
-    axis.title.x = element_text(
-      size = 16, color = "#333333", face = "bold",
-      margin = margin(t = 10)
-    ),
-    axis.title.y = element_text(
-      size = 16, color = "#333333", face = "bold",
-      margin = margin(r = 10)
-    ),
-    axis.text = element_text(size = 16, color = "#333333", face = "bold"),
-    # Simple axis lines
-    axis.line.x = element_line(color = "#CCCCCC", linewidth = 0.3),
-    axis.line.y = element_line(color = "#CCCCCC", linewidth = 0.3),
-    axis.ticks = element_line(color = "#CCCCCC", linewidth = 0.3),
-    axis.ticks.length = unit(2, "pt"),
-    # Hide legend since we have direct labels
-    legend.position = "none",
-    # Clean spacing
-    plot.margin = margin(20, 30, 15, 15)  # Extra right margin for labels
-  )
-
-# =============================================================================
-# CREATE RESTRICTED DATASET PLOT
-# =============================================================================
-
-# Create labels for the end of lines with adjusted positions to avoid overlap
-end_labels_restricted <- combined_line_data_restricted %>% 
-  filter(Threshold_Percent == 90) %>%
-  mutate(
-    # Adjust y positions to prevent overlap
-    label_y = case_when(
-      Watershed == "Nush" ~ Performance + 2,    # Move Nush up slightly
-      Watershed == "Average" ~ Performance - 2, # Move Average down slightly
-      TRUE ~ Performance                        # Keep others at line position
+  
+  plot_total <- ggplot(data_total, aes(x = Threshold_Percent, y = Performance, 
+                                       color = Watershed, linetype = Watershed)) +
+    geom_line(linewidth = 1.8, alpha = 0.9) +
+    geom_point(size = 3, alpha = 0.9) +
+    geom_text(data = end_labels_total,
+              aes(label = Watershed, x = label_x, y = label_y, color = Watershed),
+              hjust = 0, size = 6.5, fontface = "bold", show.legend = FALSE) +
+    scale_color_manual(values = watershed_colors) +
+    scale_linetype_manual(values = line_types) +
+    scale_x_continuous(
+      breaks = seq(60, 90, 5),
+      labels = function(x) paste0(x, "%"),
+      limits = c(60, 100),
+      expand = c(0, 0)
+    ) +
+    scale_y_continuous(
+      breaks = seq(50, 100, 10),
+      labels = function(x) paste0(x, "%"),
+      limits = c(50, 100),
+      expand = c(0, 0)
+    ) +
+    labs(
+      title = "Total Dataset",
+      x = "Probability Threshold",
+      y = "Classification Accuracy"
+    ) +
+    theme_minimal(base_size = 16) +
+    theme(
+      plot.background = element_rect(fill = "white", color = NA),
+      panel.background = element_rect(fill = "white", color = NA),
+      panel.grid.major.x = element_blank(),
+      panel.grid.major.y = element_line(color = "#E5E5E5", linewidth = 0.3),
+      panel.grid.minor = element_blank(),
+      panel.border = element_blank(),
+      plot.title = element_text(
+        hjust = 0, size = 20, face = "bold", 
+        color = "#2E2E2E", margin = margin(b = 15)
+      ),
+      axis.title.x = element_text(
+        size = 16, color = "#333333", face = "bold",
+        margin = margin(t = 10)
+      ),
+      axis.title.y = element_text(
+        size = 16, color = "#333333", face = "bold",
+        margin = margin(r = 10)
+      ),
+      axis.text = element_text(size = 16, color = "#333333", face = "bold"),
+      axis.line.x = element_line(color = "#CCCCCC", linewidth = 0.3),
+      axis.line.y = element_line(color = "#CCCCCC", linewidth = 0.3),
+      axis.ticks = element_line(color = "#CCCCCC", linewidth = 0.3),
+      axis.ticks.length = unit(2, "pt"),
+      legend.position = "none",
+      plot.margin = margin(20, 30, 15, 15)
     )
-  )
-
-plot_restricted <- ggplot(combined_line_data_restricted, aes(x = Threshold_Percent, y = Performance, 
-                                                             color = Watershed, linetype = Watershed)) +
-  # Simple, clean lines
-  geom_line(linewidth = 1.8, alpha = 0.9) +
-  # Simple points
-  geom_point(size = 3, alpha = 0.9) +
-  # Add labels at the end of each line - increased size with adjusted positions
-  geom_text(data = end_labels_restricted,
-            aes(label = Watershed, x = Threshold_Percent + 1.5, y = label_y, color = Watershed),
-            hjust = 0, size = 6.5, fontface = "bold", show.legend = FALSE) +
-  # Scales
-  scale_color_manual(values = watershed_colors) +
-  scale_linetype_manual(values = line_types) +
-  scale_x_continuous(
-    breaks = seq(60, 90, 5),
-    labels = function(x) paste0(x, "%"),
-    limits = c(60, 102),  # Extended to make room for staggered labels
-    expand = c(0, 0)
-  ) +
-  scale_y_continuous(
-    breaks = seq(50, 100, 10),
-    labels = function(x) paste0(x, "%"),
-    limits = c(50, 100),
-    expand = c(0, 0)
-  ) +
-  # Clean, minimal labels
-  labs(
-    title = "Restricted Dataset",
-    x = "Probability Threshold",
-    y = "Classification Accuracy"
-  ) +
-  # Clean, Economist-style theme
-  theme_minimal(base_size = 16) +
-  theme(
-    # Clean white background
-    plot.background = element_rect(fill = "white", color = NA),
-    panel.background = element_rect(fill = "white", color = NA),
-    # Subtle grid - only major horizontal lines
-    panel.grid.major.x = element_blank(),
-    panel.grid.major.y = element_line(color = "#E5E5E5", linewidth = 0.3),
-    panel.grid.minor = element_blank(),
-    # No panel border
-    panel.border = element_blank(),
-    # Clean typography
-    plot.title = element_text(
-      hjust = 0, size = 20, face = "bold", 
-      color = "#2E2E2E", margin = margin(b = 15)
-    ),
-    plot.caption = element_text(
-      hjust = 0, size = 9, 
-      color = "#999999", margin = margin(t = 15)
-    ),
-    axis.title.x = element_text(
-      size = 16, color = "#666666",face = "bold",
-      margin = margin(t = 10)
-    ),
-    axis.title.y = element_text(
-      size = 16, color = "#666666", 
-      margin = margin(r = 10)
-    ),
-    axis.text = element_text(size = 16, color = "#333333", face = "bold"),
-    # Simple axis lines
-    axis.line.x = element_line(color = "#CCCCCC", linewidth = 0.3),
-    axis.line.y = element_line(color = "#CCCCCC", linewidth = 0.3),
-    axis.ticks = element_line(color = "#CCCCCC", linewidth = 0.3),
-    axis.ticks.length = unit(2, "pt"),
-    # Hide legend since we have direct labels
-    legend.position = "none",
-    # Clean spacing
-    plot.margin = margin(20, 40, 15, 15)  # Extra right margin for staggered labels
-  )
-
-# =============================================================================
-# CREATE COMBINED TWO-PANEL FIGURE
-# =============================================================================
-
-# Combine plots using patchwork
-combined_plot <- plot_total + plot_restricted + 
-  plot_layout(ncol = 2) +
-  plot_annotation(
-    title = "Watershed Classification Performance Across Probability Thresholds",
-    theme = theme(
-      plot.title = element_text(hjust = 0.5, size = 24, face = "bold", color = "#2E2E2E"),
-      plot.subtitle = element_text(hjust = 0.5, size = 18, color = "#666666"),
-      plot.caption = element_text(hjust = 0.5, size = 10, color = "#999999")
+  
+  # ============================================================================
+  # CREATE RESTRICTED DATASET PLOT
+  # ============================================================================
+  
+  # Create labels with adjusted positions
+  end_labels_restricted <- data_restricted %>% 
+    filter(Threshold_Percent == 90) %>%
+    mutate(
+      label_y = case_when(
+        Watershed == "Nush" ~ Performance + 2,
+        Watershed == "Average" ~ Performance - 2,
+        TRUE ~ Performance
+      )
     )
-  )
+  
+  plot_restricted <- ggplot(data_restricted, aes(x = Threshold_Percent, y = Performance, 
+                                                 color = Watershed, linetype = Watershed)) +
+    geom_line(linewidth = 1.8, alpha = 0.9) +
+    geom_point(size = 3, alpha = 0.9) +
+    geom_text(data = end_labels_restricted,
+              aes(label = Watershed, x = Threshold_Percent + 1.5, y = label_y, color = Watershed),
+              hjust = 0, size = 6.5, fontface = "bold", show.legend = FALSE) +
+    scale_color_manual(values = watershed_colors) +
+    scale_linetype_manual(values = line_types) +
+    scale_x_continuous(
+      breaks = seq(60, 90, 5),
+      labels = function(x) paste0(x, "%"),
+      limits = c(60, 102),
+      expand = c(0, 0)
+    ) +
+    scale_y_continuous(
+      breaks = seq(50, 100, 10),
+      labels = function(x) paste0(x, "%"),
+      limits = c(50, 100),
+      expand = c(0, 0)
+    ) +
+    labs(
+      title = "Restricted Dataset",
+      x = "Probability Threshold",
+      y = "Classification Accuracy"
+    ) +
+    theme_minimal(base_size = 16) +
+    theme(
+      plot.background = element_rect(fill = "white", color = NA),
+      panel.background = element_rect(fill = "white", color = NA),
+      panel.grid.major.x = element_blank(),
+      panel.grid.major.y = element_line(color = "#E5E5E5", linewidth = 0.3),
+      panel.grid.minor = element_blank(),
+      panel.border = element_blank(),
+      plot.title = element_text(
+        hjust = 0, size = 20, face = "bold", 
+        color = "#2E2E2E", margin = margin(b = 15)
+      ),
+      axis.title.x = element_text(
+        size = 16, color = "#666666", face = "bold",
+        margin = margin(t = 10)
+      ),
+      axis.title.y = element_text(
+        size = 16, color = "#666666",
+        margin = margin(r = 10)
+      ),
+      axis.text = element_text(size = 16, color = "#333333", face = "bold"),
+      axis.line.x = element_line(color = "#CCCCCC", linewidth = 0.3),
+      axis.line.y = element_line(color = "#CCCCCC", linewidth = 0.3),
+      axis.ticks = element_line(color = "#CCCCCC", linewidth = 0.3),
+      axis.ticks.length = unit(2, "pt"),
+      legend.position = "none",
+      plot.margin = margin(20, 40, 15, 15)
+    )
+  
+  # ============================================================================
+  # COMBINE AND SAVE
+  # ============================================================================
+  
+  # Combined plot
+  combined_plot <- plot_total + plot_restricted + 
+    plot_layout(ncol = 2) +
+    plot_annotation(
+      title = "Watershed Classification Performance Across Probability Thresholds",
+      theme = theme(
+        plot.title = element_text(hjust = 0.5, size = 24, face = "bold", 
+                                  color = "#2E2E2E")
+      )
+    )
+  
+  # Save plots
+  ggsave(file.path(output_dir, "GAM_RF_TOTAL_Performance_Line_Plot.png"), 
+         plot_total, width = 12, height = 8, dpi = 300, bg = "white", 
+         device = "png", type = "cairo")
+  
+  ggsave(file.path(output_dir, "GAM_RF_Restricted_Performance_Line_Plot.png"), 
+         plot_restricted, width = 12, height = 8, dpi = 300, bg = "white",
+         device = "png", type = "cairo")
+  
+  ggsave(file.path(output_dir, "GAM_RF_Combined_Performance_Line_Plot.png"), 
+         combined_plot, width = 20, height = 10, dpi = 300, bg = "white",
+         device = "png", type = "cairo")
+  
+  cat("  Figures saved\n\n")
+}
 
-# =============================================================================
-# SAVE PLOTS
-# =============================================================================
-
-# Save individual plots
-ggsave(file.path(output_dir, "GAM_RF_TOTAL_Performance_Line_Plot.png"), 
-       plot_total, width = 12, height = 8, dpi = 300, bg = "white", 
-       device = "png", type = "cairo")
-
-ggsave(file.path(output_dir, "GAM_RF_Restricted_Performance_Line_Plot.png"), 
-       plot_restricted, width = 12, height = 8, dpi = 300, bg = "white",
-       device = "png", type = "cairo")
-
-# Save combined two-panel figure
-ggsave(file.path(output_dir, "GAM_RF_Combined_Performance_Line_Plot.png"), 
-       combined_plot, width = 20, height = 10, dpi = 300, bg = "white",
-       device = "png", type = "cairo")
-
-# =============================================================================
-# COMPLETION MESSAGE
-# =============================================================================
-
-cat("\n🎉 ALL PLOTS COMPLETE!\n")
-cat(paste(rep("=", 60), collapse = ""), "\n")
-cat("Performance line plots created for TOTAL and Restricted datasets\n")
-cat("✅ TOTAL plot saved:", "GAM_RF_TOTAL_Performance_Line_Plot.png\n")
-cat("✅ Restricted plot saved:", "GAM_RF_Restricted_Performance_Line_Plot.png\n")
-cat("✅ COMBINED plot saved:", "GAM_RF_Combined_Performance_Line_Plot.png\n")
-cat("📁 Location:", output_dir, "\n")
-cat("📝 Features: Direct line labeling, Economist-style theme, clean layout, two-panel combined figure\n")
+cat("=== COMPLETE ===\n")
+cat("Output directory:", output_dir, "\n\n")
