@@ -2,31 +2,30 @@ library(magick)
 
 # ===== FIRST FIGURE: Basin Layout and Isoscape (2 rows) =====
 # File paths
-pdf_path <- "/Users/benjaminmakhlouf/Research_repos/04_Western_Ak_otolith_stock_discrimination/Figures/BasinLayout_Isoscape.pdf"
-jpg_path <- "/Users/benjaminmakhlouf/Research_repos/04_Western_Ak_otolith_stock_discrimination/Figures/BasinLayout.pdf"
-output_path1 <- "/Users/benjaminmakhlouf/Research_repos/04_Western_Ak_otolith_stock_discrimination/Figures/BasinLayout_Isoscape_Combined_Labeled.pdf"
+png_path1 <- "/Users/benjaminmakhlouf/Research_repos/04_Western_Ak_otolith_stock_discrimination/Figures/isoscape.png"
+png_path2 <- "/Users/benjaminmakhlouf/Research_repos/04_Western_Ak_otolith_stock_discrimination/Figures/Layout.png"
+output_path1 <- "/Users/benjaminmakhlouf/Research_repos/04_Western_Ak_otolith_stock_discrimination/Figures/BasinLayout_Isoscape_Combined_Labeled.png"
 
-# Read BOTH as PDFs at the same density
-density <- 150
-img_pdf <- image_read_pdf(pdf_path, density = density, pages = 1)
-img_jpg <- image_read_pdf(jpg_path, density = density, pages = 1)
+# Read both PNG images
+img_png1 <- image_read(png_path1)
+img_png2 <- image_read(png_path2)
 
 # Get dimensions
-info_pdf <- image_info(img_pdf)
-info_jpg <- image_info(img_jpg)
+info_png1 <- image_info(img_png1)
+info_png2 <- image_info(img_png2)
 
 # Decide on a target width (use the larger of the two, or set a specific value)
-target_width <- max(info_pdf$width, info_jpg$width)
+target_width <- max(info_png1$width, info_png2$width)
 
 # Resize BOTH images to the exact same width
-img_pdf <- image_resize(img_pdf, geometry_size_pixels(width = target_width))
-img_jpg <- image_resize(img_jpg, geometry_size_pixels(width = target_width))
+img_png1 <- image_resize(img_png1, geometry_size_pixels(width = target_width))
+img_png2 <- image_resize(img_png2, geometry_size_pixels(width = target_width))
 
 # Verify they're the same width now
-info_pdf <- image_info(img_pdf)
-info_jpg <- image_info(img_jpg)
-print(paste("PDF width:", info_pdf$width, "height:", info_pdf$height))
-print(paste("JPG width:", info_jpg$width, "height:", info_jpg$height))
+info_png1 <- image_info(img_png1)
+info_png2 <- image_info(img_png2)
+print(paste("PNG1 width:", info_png1$width, "height:", info_png1$height))
+print(paste("PNG2 width:", info_png2$width, "height:", info_png2$height))
 
 # --- Simple function with absolute values for everything ---
 add_label_absolute <- function(img, label, size = 120, x_offset = 50, y_offset = 50, color = "black") {
@@ -41,20 +40,25 @@ add_label_absolute <- function(img, label, size = 120, x_offset = 50, y_offset =
   )
 }
 
-# Add labels with identical parameters
-label_size <- 75
-x_pos <- 50
-y_pos <- 50
-img_pdf_labeled <- add_label_absolute(img_pdf, "A", size = label_size, x_offset = x_pos, y_offset = y_pos)
-img_jpg_labeled <- add_label_absolute(img_jpg, "B", size = label_size, x_offset = x_pos, y_offset = y_pos)
+# Add labels with MUCH LARGER size
+label_size <- 200  # Increased from 75 to 200
+x_pos <- 100       # Increased offset slightly
+y_pos <- 100       # Increased offset slightly
+
+img_png1_labeled <- add_label_absolute(img_png1, "A", size = label_size, x_offset = x_pos, y_offset = y_pos)
+img_png2_labeled <- add_label_absolute(img_png2, "B", size = label_size, x_offset = x_pos, y_offset = y_pos)
 
 # Stack vertically
-combined1 <- image_append(c(img_pdf_labeled, img_jpg_labeled), stack = TRUE)
+combined1 <- image_append(c(img_png1_labeled, img_png2_labeled), stack = TRUE)
 
-# Save outputs
-image_write(combined1, path = output_path1, format = "pdf")
-image_write(combined1, path = sub(".pdf", ".png", output_path1), format = "png", quality = 100, density = 150)
-print(paste("First combined figure saved to:", output_path1))
+# Save output as PNG
+image_write(combined1, path = output_path1, format = "png", quality = 100)
+
+print(paste("Combined figure saved to:", output_path1))
+
+
+
+
 
 
 # ===== SECOND FIGURE: PCA plots (1 row, 2 panels) =====
