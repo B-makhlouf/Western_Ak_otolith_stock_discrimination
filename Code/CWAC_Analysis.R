@@ -1,134 +1,162 @@
+################################################################################
 # CWAK vs non-CWAK Classification Performance Analysis
-# Simple, step-by-step analysis without complex functions
-# CWAK = Lower Yukon + All Kuskokwim + All Nushagak
-# non-CWAK = Middle Yukon + Upper Yukon
+################################################################################
+#
+# PURPOSE:
+#   Test the classification accuracy of GAM Random Forest models for separating
+#   CWAK from non-CWAK fish based on otolith chemistry.
+#
+# DEFINITIONS:
+#   - CWAK: Lower Yukon + All Kuskokwim + All Nushagak
+#   - non-CWAK: Middle Yukon + Upper Yukon
+#
+# INPUTS:
+#   1. Metadata with genetic assignments (Lower_gen, Middle_gen, Upper_gen)
+#   2. GAM Random Forest predictions (Total and Overlap analyses)
+#
+# OUTPUTS:
+#   - Accuracy statistics for CWAK vs non-CWAK groups
+#   - Component breakdown (Lower Yukon, Kuskokwim, Nushagak)
+#   - Visualization plots
+#
+################################################################################
 
+# Load required libraries
 library(tidyverse)
 library(ggplot2)
 
-# =============================================================================
-# STEP 1: LOAD METADATA WITH GENETIC INFORMATION
-# =============================================================================
+################################################################################
+# CONFIGURATION
+################################################################################
 
-cat("STEP 1: Loading metadata...\n")
+# File paths (UPDATE THESE FOR YOUR SYSTEM)
+METADATA_PATH <- "/Users/benjaminmakhlouf/Research_repos/04_Western_Ak_otolith_stock_discrimination/Data/Final/Metadata_and_QC.csv"
+PREDICTIONS_TOTAL_PATH <- "/Users/benjaminmakhlouf/Research_repos/04_Western_Ak_otolith_stock_discrimination/Output/ModelResultsPreCal/Total/GAM_RF_TOTAL_predictions.csv"
+PREDICTIONS_OVERLAP_PATH <- "/Users/benjaminmakhlouf/Research_repos/04_Western_Ak_otolith_stock_discrimination/Output/ModelResultsPreCal/Filtered/GAM_RF_OVERLAP_predictions.csv"
 
-metadata_path <- "/Users/benjaminmakhlouf/Research_repos/04_Western_Ak_otolith_stock_discrimination/Data/Final/Metadata_and_QC.csv"
-metadata <- read.csv(metadata_path)
+# Output directory
+OUTPUT_DIR <- "/Users/benjaminmakhlouf/Research_repos/04_Western_Ak_otolith_stock_discrimination/Figures/CWAK Analysis"
 
-cat("Loaded", nrow(metadata), "fish from metadata\n")
+################################################################################
+# STEP 1: LOAD AND PREPARE METADATA
+################################################################################
 
-# =============================================================================
-# STEP 2: CREATE GENETIC GROUPS
-# =============================================================================
+cat(strrep("=", 80), "\n")
+cat("CWAK vs non-CWAK CLASSIFICATION ANALYSIS\n")
+cat(strrep("=", 80), "\n\n")
 
-cat("\nSTEP 2: Creating genetic groups...\n")
+cat("STEP 1: Loading metadata with genetic information...\n")
 
-# Add genetic group based on highest probability
-metadata$genetic_group <- NA
+metadata <- read.csv(METADATA_PATH)
+cat("  Loaded", nrow(metadata), "fish from metadata\n\n")
 
-for(i in 1:nrow(metadata)) {
-  lower <- metadata$Lower_gen[i]
-  middle <- metadata$Middle_gen[i] 
-  upper <- metadata$Upper_gen[i]
-  
-  if(!is.na(lower) | !is.na(middle) | !is.na(upper)) {
-    probs <- c(Lower = lower, Middle = middle, Upper = upper)
-    probs <- probs[!is.na(probs)]
-    
-    if(length(probs) > 0) {
-      metadata$genetic_group[i] <- names(probs)[which.max(probs)]
+################################################################################
+# STEP 2: ASSIGN GENETIC GROUPS
+################################################################################
+
+cat("STEP 2: Assigning genetic groups based on highest probability...\n")
+
+# For each fish, assign genetic group based on highest probability among
+# Lower_gen, Middle_gen, and Upper_gen
+metadata <- metadata %>%
+  rowwise() %>%
+  mutate(
+    genetic_group = {
+      probs <- c(Lower = Lower_gen, Middle = Middle_gen, Upper = Upper_gen)
+      probs <- probs[!is.na(probs)]
+      if(length(probs) > 0) {
+        names(probs)[which.max(probs)]
+      } else {
+        NA_character_
+      }
     }
-  }
-}
+  ) %>%
+  ungroup()
 
-# Clean up column names
-metadata$Fish_id <- metadata$Fish_ID
-metadata$Natal_Iso <- metadata$Natal_origins_iso
+# Standardize column names
+metadata <- metadata %>%
+  rename(
+    Fish_id = Fish_ID,
+    Natal_Iso = Natal_origins_iso
+  )
 
-cat("Genetic groups assigned:\n")
+cat("  Genetic group assignments:\n")
 print(table(metadata$genetic_group, useNA = "ifany"))
+cat("\n")
 
-# =============================================================================
+################################################################################
 # STEP 3: LOAD PREDICTION RESULTS
-# =============================================================================
+################################################################################
 
-cat("\nSTEP 3: Loading prediction results...\n")
+cat("STEP 3: Loading GAM Random Forest predictions...\n")
 
-# Load Total analysis predictions
-total_predictions <- read.csv("/Users/benjaminmakhlouf/Research_repos/04_Western_Ak_otolith_stock_discrimination/Output/ModelResultsPreCal/Total/GAM_RF_TOTAL_predictions.csv")
+# Load predictions from both analyses
+predictions_total <- read.csv(PREDICTIONS_TOTAL_PATH) %>%
+  mutate(analysis = "Total")
 
-# Load Overlap analysis predictions  
-overlap_predictions <- read.csv("/Users/benjaminmakhlouf/Research_repos/04_Western_Ak_otolith_stock_discrimination/Output/ModelResultsPreCal/Filtered/GAM_RF_OVERLAP_predictions.csv")
+predictions_overlap <- read.csv(PREDICTIONS_OVERLAP_PATH) %>%
+  mutate(analysis = "Overlap")
 
-cat("Total predictions:", nrow(total_predictions), "fish\n")
-cat("Overlap predictions:", nrow(overlap_predictions), "fish\n")
+cat("  Total analysis:", nrow(predictions_total), "predictions\n")
+cat("  Overlap analysis:", nrow(predictions_overlap), "predictions\n\n")
 
-# =============================================================================
-# STEP 4: MERGE PREDICTIONS WITH GENETIC DATA
-# =============================================================================
+################################################################################
+# STEP 4: MERGE PREDICTIONS WITH METADATA
+################################################################################
 
-cat("\nSTEP 4: Merging predictions with genetic data...\n")
+cat("STEP 4: Merging predictions with genetic information...\n")
 
-# For Total analysis - use all fish
-total_with_genetics <- total_predictions
-total_with_genetics$genetic_group <- metadata$genetic_group[1:nrow(total_predictions)]
-total_with_genetics$Fish_id <- metadata$Fish_id[1:nrow(total_predictions)]
-total_with_genetics$Natal_Iso <- metadata$Natal_Iso[1:nrow(total_predictions)]
-total_with_genetics$analysis <- "Total"
+# Combine all predictions
+all_predictions <- bind_rows(predictions_total, predictions_overlap)
 
-# For Overlap analysis - use fish with Natal_Iso < 0.713
-overlap_fish <- metadata[!is.na(metadata$Natal_Iso) & metadata$Natal_Iso < 0.713, ]
-overlap_with_genetics <- overlap_predictions
-overlap_with_genetics$genetic_group <- overlap_fish$genetic_group[1:nrow(overlap_predictions)]
-overlap_with_genetics$Fish_id <- overlap_fish$Fish_id[1:nrow(overlap_predictions)]
-overlap_with_genetics$Natal_Iso <- overlap_fish$Natal_Iso[1:nrow(overlap_predictions)]
-overlap_with_genetics$analysis <- "Overlap"
+# Merge with metadata to get genetic groups
+all_predictions <- all_predictions %>%
+  left_join(
+    metadata %>% select(Fish_id, genetic_group, Lower_gen, Middle_gen, Upper_gen),
+    by = "Fish_id"
+  )
 
-# Combine both analyses
-all_predictions <- bind_rows(total_with_genetics, overlap_with_genetics)
+cat("  Merged dataset:", nrow(all_predictions), "predictions\n")
+cat("  Fish with genetic data:", sum(!is.na(all_predictions$genetic_group)), "\n\n")
 
-cat("Combined data:", nrow(all_predictions), "predictions\n")
-
-# =============================================================================
+################################################################################
 # STEP 5: CREATE CWAK GROUPINGS
-# =============================================================================
+################################################################################
 
-cat("\nSTEP 5: Creating CWAK vs non-CWAK groups...\n")
+cat("STEP 5: Creating CWAK vs non-CWAK groupings...\n")
 
-# Add CWAK grouping
-all_predictions$cwak_group <- NA
+all_predictions <- all_predictions %>%
+  mutate(
+    cwak_group = case_when(
+      # CWAK group
+      Watershed == "Kusko" ~ "CWAK",
+      Watershed == "Nush" ~ "CWAK",
+      Watershed == "Yukon" & genetic_group == "Lower" ~ "CWAK",
+      
+      # non-CWAK group
+      Watershed == "Yukon" & genetic_group %in% c("Middle", "Upper") ~ "non-CWAK",
+      
+      # Unassigned (Yukon without genetic data)
+      TRUE ~ NA_character_
+    )
+  )
 
-for(i in 1:nrow(all_predictions)) {
-  watershed <- all_predictions$Watershed[i]
-  genetic <- all_predictions$genetic_group[i]
-  
-  if(watershed == "Kusko") {
-    all_predictions$cwak_group[i] <- "CWAK"
-  } else if(watershed == "Nush") {
-    all_predictions$cwak_group[i] <- "CWAK"  
-  } else if(watershed == "Yukon" & genetic == "Lower") {
-    all_predictions$cwak_group[i] <- "CWAK"
-  } else if(watershed == "Yukon" & genetic %in% c("Middle", "Upper")) {
-    all_predictions$cwak_group[i] <- "non-CWAK"
-  }
-}
+cat("  CWAK grouping summary:\n")
+print(table(all_predictions$cwak_group, useNA = "ifany"))
+cat("\n")
 
-# Show CWAK group distribution
-cat("CWAK group distribution:\n")
-print(table(all_predictions$cwak_group, all_predictions$analysis, useNA = "ifany"))
+# Filter to only fish with clear CWAK classification
+cwak_data <- all_predictions %>%
+  filter(!is.na(cwak_group))
 
-# =============================================================================
-# STEP 6: CALCULATE ACCURACY BY CWAK GROUP
-# =============================================================================
+cat("  Fish available for CWAK analysis:", nrow(cwak_data), "\n\n")
 
-cat("\nSTEP 6: Calculating accuracy by CWAK group...\n")
+################################################################################
+# STEP 6: CALCULATE OVERALL ACCURACY BY CWAK GROUP
+################################################################################
 
-# Filter to only fish that can be assigned to CWAK or non-CWAK
-cwak_data <- all_predictions[!is.na(all_predictions$cwak_group), ]
+cat("STEP 6: Calculating classification accuracy by CWAK group...\n")
 
-cat("Fish available for CWAK analysis:", nrow(cwak_data), "\n")
-
-# Calculate accuracy for each CWAK group and analysis
 cwak_accuracy <- cwak_data %>%
   group_by(analysis, cwak_group) %>%
   summarise(
@@ -138,27 +166,31 @@ cwak_accuracy <- cwak_data %>%
     .groups = "drop"
   )
 
-cat("\nCWAK vs non-CWAK Accuracy Results:\n")
+cat("\n")
+cat(strrep("=", 80), "\n")
+cat("CWAK vs non-CWAK ACCURACY RESULTS\n")
+cat(strrep("=", 80), "\n")
 print(cwak_accuracy)
+cat("\n")
 
-# =============================================================================
-# STEP 7: CALCULATE CWAK COMPONENT BREAKDOWN
-# =============================================================================
+################################################################################
+# STEP 7: BREAKDOWN BY CWAK COMPONENTS
+################################################################################
 
-cat("\nSTEP 7: Breaking down CWAK components...\n")
+cat("STEP 7: Breaking down CWAK components...\n")
 
-# Calculate accuracy for each component of CWAK (only fish with genetic data)
+# Analyze each component of the CWAK group separately
 cwak_components <- cwak_data %>%
-  filter(cwak_group == "CWAK", !is.na(genetic_group)) %>%
+  filter(cwak_group == "CWAK") %>%
   mutate(
     cwak_component = case_when(
-      Watershed == "Kuskokwim" ~ "All Kuskokwim",
-      Watershed == "Nushagak" ~ "All Nushagak",
+      Watershed == "Kusko" ~ "All Kuskokwim",
+      Watershed == "Nush" ~ "All Nushagak",
       Watershed == "Yukon" & genetic_group == "Lower" ~ "Lower Yukon",
-      TRUE ~ NA_character_  # This shouldn't happen, but just in case
+      TRUE ~ NA_character_
     )
   ) %>%
-  filter(!is.na(cwak_component)) %>%  # Remove any rows that couldn't be classified
+  filter(!is.na(cwak_component)) %>%
   group_by(analysis, cwak_component) %>%
   summarise(
     n_fish = n(),
@@ -167,23 +199,46 @@ cwak_components <- cwak_data %>%
     .groups = "drop"
   )
 
-cat("\nCWAK Component Accuracy:\n")
+cat("\n")
+cat(strrep("=", 80), "\n")
+cat("CWAK COMPONENT ACCURACY\n")
+cat(strrep("=", 80), "\n")
 print(cwak_components)
+cat("\n")
 
-# =============================================================================
+################################################################################
 # STEP 8: CREATE VISUALIZATIONS
-# =============================================================================
+################################################################################
 
-cat("\nSTEP 8: Creating visualizations...\n")
+cat("STEP 8: Creating visualizations...\n\n")
 
-# FIGURE 1: CWAK vs non-CWAK comparison (both analyses)
+# Create output directory if it doesn't exist
+if(!dir.exists(OUTPUT_DIR)) {
+  dir.create(OUTPUT_DIR, recursive = TRUE)
+  cat("  Created output directory:", OUTPUT_DIR, "\n\n")
+}
+
+# Define color palette
+colors <- c("Total" = "#2E86AB", "Overlap" = "#A23B72")
+
+# -----------------------------------------------------------------------------
+# FIGURE 1: CWAK vs non-CWAK Comparison (Both Analyses)
+# -----------------------------------------------------------------------------
+
 plot1 <- ggplot(cwak_accuracy, aes(x = cwak_group, y = accuracy, fill = analysis)) +
   geom_col(position = "dodge", alpha = 0.8, width = 0.6) +
-  geom_text(aes(label = paste0(sprintf("%.1f%%", accuracy * 100), "\n(n=", n_fish, ")")),
-            position = position_dodge(width = 0.6), 
-            vjust = -0.2, size = 4, fontface = "bold") +
-  scale_y_continuous(labels = scales::percent_format(), limits = c(0, 1.1)) +
-  scale_fill_manual(values = c("Total" = "#2E86AB", "Overlap" = "#A23B72")) +
+  geom_text(
+    aes(label = paste0(sprintf("%.1f%%", accuracy * 100), "\n(n=", n_fish, ")")),
+    position = position_dodge(width = 0.6), 
+    vjust = -0.2, 
+    size = 4, 
+    fontface = "bold"
+  ) +
+  scale_y_continuous(
+    labels = scales::percent_format(), 
+    limits = c(0, 1.1)
+  ) +
+  scale_fill_manual(values = colors) +
   labs(
     title = "Classification Accuracy: CWAK vs non-CWAK Groups",
     subtitle = "CWAK = Lower Yukon + All Kuskokwim + All Nushagak\nnon-CWAK = Middle Yukon + Upper Yukon",
@@ -204,99 +259,195 @@ plot1 <- ggplot(cwak_accuracy, aes(x = cwak_group, y = accuracy, fill = analysis
 
 print(plot1)
 
-# FIGURE 2: Total analysis only
-total_only_data <- cwak_accuracy %>% filter(analysis == "Total")
+# Save plot
+ggsave(
+  filename = file.path(OUTPUT_DIR, "CWAK_vs_nonCWAK_comparison.png"),
+  plot = plot1,
+  width = 10,
+  height = 6,
+  dpi = 300
+)
+cat("  Saved Figure 1: CWAK_vs_nonCWAK_comparison.png\n")
 
-plot2 <- ggplot(total_only_data, aes(x = cwak_group, y = accuracy)) +
-  geom_col(fill = "#2E86AB", alpha = 0.8, width = 0.5) +
-  geom_text(aes(label = paste0(sprintf("%.1f%%", accuracy * 100), "\n(n=", n_fish, ")")),
-            vjust = -0.2, size = 5, fontface = "bold", color = "black") +
-  scale_y_continuous(labels = scales::percent_format(), limits = c(0, 1.1)) +
-  labs(
-    title = "Classification Accuracy: CWAK vs non-CWAK Groups",
-    subtitle = "Total Analysis Only\nCWAK = Lower Yukon + All Kuskokwim + All Nushagak",
-    x = "Group",
-    y = "Proportion Correctly Classified"
-  ) +
-  theme_minimal(base_size = 14) +
-  theme(
-    plot.title = element_text(hjust = 0.5, face = "bold", size = 16),
-    plot.subtitle = element_text(hjust = 0.5, size = 11, color = "gray50"),
-    axis.title = element_text(face = "bold", size = 12),
-    axis.text = element_text(size = 11),
-    panel.grid.major.x = element_blank(),
-    panel.grid.minor = element_blank()
+# -----------------------------------------------------------------------------
+# FIGURE 2: Total Analysis Only (Simplified)
+# -----------------------------------------------------------------------------
+
+total_only_data <- cwak_accuracy %>% 
+  filter(analysis == "Total")
+
+if(nrow(total_only_data) > 0) {
+  plot2 <- ggplot(total_only_data, aes(x = cwak_group, y = accuracy)) +
+    geom_col(fill = "#2E86AB", alpha = 0.8, width = 0.5) +
+    geom_text(
+      aes(label = paste0(sprintf("%.1f%%", accuracy * 100), "\n(n=", n_fish, ")")),
+      vjust = -0.2, 
+      size = 5, 
+      fontface = "bold", 
+      color = "black"
+    ) +
+    scale_y_continuous(
+      labels = scales::percent_format(), 
+      limits = c(0, 1.1)
+    ) +
+    labs(
+      title = "Classification Accuracy: CWAK vs non-CWAK Groups",
+      subtitle = "Total Analysis Only\nCWAK = Lower Yukon + All Kuskokwim + All Nushagak",
+      x = "Group",
+      y = "Proportion Correctly Classified"
+    ) +
+    theme_minimal(base_size = 14) +
+    theme(
+      plot.title = element_text(hjust = 0.5, face = "bold", size = 16),
+      plot.subtitle = element_text(hjust = 0.5, size = 11, color = "gray50"),
+      axis.title = element_text(face = "bold", size = 12),
+      axis.text = element_text(size = 11),
+      panel.grid.major.x = element_blank(),
+      panel.grid.minor = element_blank()
+    )
+  
+  print(plot2)
+  
+  # Save plot
+  ggsave(
+    filename = file.path(OUTPUT_DIR, "CWAK_vs_nonCWAK_total_only.png"),
+    plot = plot2,
+    width = 8,
+    height = 6,
+    dpi = 300
   )
+  cat("  Saved Figure 2: CWAK_vs_nonCWAK_total_only.png\n")
+}
 
-print(plot2)
+# -----------------------------------------------------------------------------
+# FIGURE 3: CWAK Component Breakdown
+# -----------------------------------------------------------------------------
 
-# FIGURE 3: CWAK component breakdown
-plot3 <- ggplot(cwak_components, aes(x = reorder(cwak_component, accuracy), y = accuracy, fill = analysis)) +
-  geom_col(position = "dodge", alpha = 0.8, width = 0.7) +
-  geom_text(aes(label = paste0(sprintf("%.1f%%", accuracy * 100), "\n(n=", n_fish, ")")),
-            position = position_dodge(width = 0.7), 
-            hjust = -0.1, size = 3.5, fontface = "bold") +
-  scale_y_continuous(labels = scales::percent_format(), limits = c(0, 1.2)) +
-  scale_fill_manual(values = c("Total" = "#2E86AB", "Overlap" = "#A23B72")) +
-  coord_flip() +
-  labs(
-    title = "Classification Accuracy by CWAK Components",
-    subtitle = "Individual Performance of CWAK Groups",
-    x = "CWAK Component",
-    y = "Proportion Correctly Classified",
-    fill = "Analysis Type"
+if(nrow(cwak_components) > 0) {
+  plot3 <- ggplot(
+    cwak_components, 
+    aes(x = reorder(cwak_component, accuracy), y = accuracy, fill = analysis)
   ) +
-  theme_minimal(base_size = 12) +
-  theme(
-    plot.title = element_text(hjust = 0.5, face = "bold", size = 14),
-    plot.subtitle = element_text(hjust = 0.5, size = 11, color = "gray50"),
-    axis.title = element_text(face = "bold"),
-    legend.position = "bottom",
-    panel.grid.major.y = element_blank(),
-    panel.grid.minor = element_blank()
+    geom_col(position = "dodge", alpha = 0.8, width = 0.7) +
+    geom_text(
+      aes(label = paste0(sprintf("%.1f%%", accuracy * 100), "\n(n=", n_fish, ")")),
+      position = position_dodge(width = 0.7), 
+      hjust = -0.1, 
+      size = 3.5, 
+      fontface = "bold"
+    ) +
+    scale_y_continuous(
+      labels = scales::percent_format(), 
+      limits = c(0, 1.2)
+    ) +
+    scale_fill_manual(values = colors) +
+    coord_flip() +
+    labs(
+      title = "Classification Accuracy by CWAK Components",
+      subtitle = "Individual Performance of CWAK Groups",
+      x = "CWAK Component",
+      y = "Proportion Correctly Classified",
+      fill = "Analysis Type"
+    ) +
+    theme_minimal(base_size = 12) +
+    theme(
+      plot.title = element_text(hjust = 0.5, face = "bold", size = 14),
+      plot.subtitle = element_text(hjust = 0.5, size = 11, color = "gray50"),
+      axis.title = element_text(face = "bold"),
+      legend.position = "bottom",
+      panel.grid.major.y = element_blank(),
+      panel.grid.minor = element_blank()
+    )
+  
+  print(plot3)
+  
+  # Save plot
+  ggsave(
+    filename = file.path(OUTPUT_DIR, "CWAK_component_breakdown.png"),
+    plot = plot3,
+    width = 10,
+    height = 6,
+    dpi = 300
   )
+  cat("  Saved Figure 3: CWAK_component_breakdown.png\n")
+}
 
-print(plot3)
+cat("\n")
+cat("All plots saved to:", OUTPUT_DIR, "\n")
 
-# =============================================================================
-# STEP 9: SUMMARY STATISTICS (TOTAL ANALYSIS ONLY)
-# =============================================================================
+################################################################################
+# STEP 9: PRINT SUMMARY STATISTICS
+################################################################################
 
-cat("\nSTEP 9: Summary statistics...\n")
+cat("\n")
+cat(strrep("=", 80), "\n")
+cat("FINAL SUMMARY STATISTICS (TOTAL ANALYSIS)\n")
+cat(strrep("=", 80), "\n\n")
 
-cat("\n=== CWAK GROUP SUMMARY (TOTAL ANALYSIS) ===\n")
-
-# CWAK results
+# CWAK group statistics
 cwak_results <- cwak_accuracy %>% 
-  filter(cwak_group == "CWAK")
+  filter(analysis == "Total", cwak_group == "CWAK")
 
 if(nrow(cwak_results) > 0) {
   cat("CWAK GROUP:\n")
   cat("  Total fish:", cwak_results$n_fish, "\n")
   cat("  Correctly classified:", cwak_results$correct, "\n") 
-  cat("  Accuracy:", sprintf("%.1f%%", cwak_results$accuracy * 100), "\n")
+  cat("  Accuracy:", sprintf("%.1f%%", cwak_results$accuracy * 100), "\n\n")
 }
 
-# non-CWAK results
+# non-CWAK group statistics
 non_cwak_results <- cwak_accuracy %>% 
-  filter(cwak_group == "non-CWAK")
+  filter(analysis == "Total", cwak_group == "non-CWAK")
 
 if(nrow(non_cwak_results) > 0) {
   cat("non-CWAK GROUP:\n")
   cat("  Total fish:", non_cwak_results$n_fish, "\n")
   cat("  Correctly classified:", non_cwak_results$correct, "\n")
-  cat("  Accuracy:", sprintf("%.1f%%", non_cwak_results$accuracy * 100), "\n")
+  cat("  Accuracy:", sprintf("%.1f%%", non_cwak_results$accuracy * 100), "\n\n")
 }
 
 # Component breakdown
 if(nrow(cwak_components) > 0) {
-  cat("CWAK COMPONENTS:\n")
-  for(i in 1:nrow(cwak_components)) {
-    comp <- cwak_components[i, ]
-    cat("  ", comp$cwak_component, ": ", comp$n_fish, " fish, ", 
-        sprintf("%.1f%%", comp$accuracy * 100), " accuracy\n")
+  cat("CWAK COMPONENTS (TOTAL ANALYSIS):\n")
+  total_components <- cwak_components %>% filter(analysis == "Total")
+  
+  for(i in 1:nrow(total_components)) {
+    comp <- total_components[i, ]
+    cat("  ", comp$cwak_component, ":\n")
+    cat("    Fish:", comp$n_fish, "\n")
+    cat("    Accuracy:", sprintf("%.1f%%", comp$accuracy * 100), "\n")
   }
 }
 
-cat("\n=== ANALYSIS COMPLETE ===\n")
-cat("Script completed successfully!\n")
+cat("\n")
+cat(strrep("=", 80), "\n")
+cat("ANALYSIS COMPLETE\n")
+cat(strrep("=", 80), "\n")
+
+################################################################################
+# STEP 10: SAVE RESULTS TO CSV
+################################################################################
+
+cat("\n")
+cat(strrep("=", 80), "\n")
+cat("SAVING RESULTS\n")
+cat(strrep("=", 80), "\n\n")
+
+# Save accuracy results
+accuracy_file <- file.path(OUTPUT_DIR, "CWAK_accuracy_results.csv")
+write.csv(cwak_accuracy, accuracy_file, row.names = FALSE)
+cat("Saved accuracy results to:", accuracy_file, "\n")
+
+# Save component breakdown
+component_file <- file.path(OUTPUT_DIR, "CWAK_component_results.csv")
+write.csv(cwak_components, component_file, row.names = FALSE)
+cat("Saved component results to:", component_file, "\n")
+
+# Save detailed predictions with CWAK groupings
+detailed_file <- file.path(OUTPUT_DIR, "CWAK_detailed_predictions.csv")
+write.csv(cwak_data, detailed_file, row.names = FALSE)
+cat("Saved detailed predictions to:", detailed_file, "\n")
+
+################################################################################
+# END OF SCRIPT
+################################################################################

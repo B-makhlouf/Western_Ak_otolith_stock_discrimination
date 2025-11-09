@@ -175,9 +175,9 @@ create_additional_pca_plots <- function(gam_data, dataset_name, output_directory
   
   colors <- c("Kusko" = "firebrick", "Nush" = "darkgreen", "Yukon" = "dodgerblue")
   
-  # PC1 vs PC2 plot
+  # PC1 vs PC2 plot (no legend)
   pc1_pc2_plot <- ggplot(pc_scores, aes(x = PC1, y = PC2, color = Watershed)) +
-    geom_point(size = 5, alpha = 0.7, stroke = 0.3) +
+    geom_point(size = 7, alpha = 0.7, stroke = 0.4) +
     scale_color_manual(values = colors, name = "Watershed") +
     scale_x_continuous(breaks = pretty_breaks(n = 6), expand = expansion(mult = 0.05)) +
     scale_y_continuous(breaks = pretty_breaks(n = 6), expand = expansion(mult = 0.05)) +
@@ -186,35 +186,35 @@ create_additional_pca_plots <- function(gam_data, dataset_name, output_directory
       x = paste0("PC1 (", round(var_explained[1] * 100, 2), "% variance)"),
       y = paste0("PC2 (", round(var_explained[2] * 100, 2), "% variance)")
     ) +
-    theme_minimal(base_size = 24) +
+    theme_minimal(base_size = 28) +
     theme(
       plot.background = element_rect(fill = "white", color = NA),
       panel.background = element_rect(fill = "white", color = NA),
-      axis.title = element_text(size = 26, face = "bold", color = "grey20"),
-      axis.title.x = element_text(margin = margin(t = 15)),
-      axis.title.y = element_text(margin = margin(r = 15)),
-      axis.text = element_text(size = 22, color = "grey30"),
-      axis.line = element_line(color = "grey60", linewidth = 0.7),
-      axis.ticks = element_line(color = "grey60", linewidth = 0.6),
-      axis.ticks.length = unit(6, "pt"),
-      panel.grid.major = element_line(color = "grey90", linewidth = 0.5),
+      axis.title = element_text(size = 32, face = "bold", color = "grey20"),
+      axis.title.x = element_text(margin = margin(t = 18)),
+      axis.title.y = element_text(margin = margin(r = 18)),
+      axis.text = element_text(size = 28, color = "grey30"),
+      axis.line = element_line(color = "grey60", linewidth = 0.8),
+      axis.ticks = element_line(color = "grey60", linewidth = 0.7),
+      axis.ticks.length = unit(7, "pt"),
+      panel.grid.major = element_line(color = "grey90", linewidth = 0.6),
       panel.grid.minor = element_blank(),
       legend.position = "none",
-      plot.margin = margin(25, 25, 25, 25)
+      plot.margin = margin(30, 30, 30, 30)
     )
   
   tryCatch({
     pc1_pc2_plot <- pc1_pc2_plot + 
       stat_ellipse(aes(fill = Watershed), alpha = 0.15, level = 0.95, 
-                   geom = "polygon", show.legend = FALSE, linewidth = 1.2) +
+                   geom = "polygon", show.legend = FALSE, linewidth = 1.4) +
       scale_fill_manual(values = colors, guide = "none")
   }, error = function(e) {
     cat("  Warning: Could not add ellipses to PC1 vs PC2 plot\n")
   })
   
-  # PC2 vs PC3 plot with legend
-  pc2_pc3_plot_with_legend <- ggplot(pc_scores, aes(x = PC2, y = PC3, color = Watershed)) +
-    geom_point(size = 5, alpha = 0.7, stroke = 0.3) +
+  # PC2 vs PC3 plot (no legend)
+  pc2_pc3_plot_no_legend <- ggplot(pc_scores, aes(x = PC2, y = PC3, color = Watershed)) +
+    geom_point(size = 7, alpha = 0.7, stroke = 0.4) +
     scale_color_manual(values = colors, name = "Watershed") +
     scale_x_continuous(breaks = pretty_breaks(n = 6), expand = expansion(mult = 0.05)) +
     scale_y_continuous(breaks = pretty_breaks(n = 6), expand = expansion(mult = 0.05)) +
@@ -223,49 +223,83 @@ create_additional_pca_plots <- function(gam_data, dataset_name, output_directory
       x = paste0("PC2 (", round(var_explained[2] * 100, 2), "% variance)"),
       y = paste0("PC3 (", round(var_explained[3] * 100, 2), "% variance)")
     ) +
-    theme_minimal(base_size = 24) +
+    theme_minimal(base_size = 28) +
     theme(
       plot.background = element_rect(fill = "white", color = NA),
       panel.background = element_rect(fill = "white", color = NA),
-      axis.title = element_text(size = 26, face = "bold", color = "grey20"),
-      axis.title.x = element_text(margin = margin(t = 15)),
-      axis.title.y = element_text(margin = margin(r = 15)),
-      axis.text = element_text(size = 22, color = "grey30"),
-      axis.line = element_line(color = "grey60", linewidth = 0.7),
-      axis.ticks = element_line(color = "grey60", linewidth = 0.6),
-      axis.ticks.length = unit(6, "pt"),
-      panel.grid.major = element_line(color = "grey90", linewidth = 0.5),
+      axis.title = element_text(size = 32, face = "bold", color = "grey20"),
+      axis.title.x = element_text(margin = margin(t = 18)),
+      axis.title.y = element_text(margin = margin(r = 18)),
+      axis.text = element_text(size = 28, color = "grey30"),
+      axis.line = element_line(color = "grey60", linewidth = 0.8),
+      axis.ticks = element_line(color = "grey60", linewidth = 0.7),
+      axis.ticks.length = unit(7, "pt"),
+      panel.grid.major = element_line(color = "grey90", linewidth = 0.6),
       panel.grid.minor = element_blank(),
-      legend.position = "bottom",
-      legend.title = element_text(size = 28, face = "bold", color = "grey20"),
-      legend.text = element_text(size = 26, color = "grey30"),
-      legend.key.size = unit(2.5, "lines"),
-      legend.key = element_blank(),
-      legend.spacing.x = unit(1.2, "cm"),
-      legend.margin = margin(t = 20),
-      legend.box.margin = margin(t = 15),
-      plot.margin = margin(25, 25, 25, 25)
+      legend.position = "none",
+      plot.margin = margin(30, 30, 30, 30)
     )
   
   tryCatch({
-    pc2_pc3_plot_with_legend <- pc2_pc3_plot_with_legend + 
+    pc2_pc3_plot_no_legend <- pc2_pc3_plot_no_legend + 
       stat_ellipse(aes(fill = Watershed), alpha = 0.15, level = 0.95, 
-                   geom = "polygon", show.legend = FALSE, linewidth = 1.2) +
+                   geom = "polygon", show.legend = FALSE, linewidth = 1.4) +
       scale_fill_manual(values = colors, guide = "none")
   }, error = function(e) {
     cat("  Warning: Could not add ellipses to PC2 vs PC3 plot\n")
   })
   
-  combined_plot_with_legend <- (pc1_pc2_plot / pc2_pc3_plot_with_legend) +
-    plot_layout(nrow = 2) +
-    plot_annotation(
-      title = NULL,
-      theme = theme_void() +
-        theme(
-          plot.background = element_rect(fill = "white", color = NA),
-          plot.margin = margin(20, 20, 20, 20)
-        )
+  # Combine plots without legend first
+  combined_plots <- (pc1_pc2_plot / pc2_pc3_plot_no_legend) +
+    plot_layout(nrow = 2)
+  
+  # Create a dummy plot with just the legend - make it visible with actual aesthetics
+  legend_data <- data.frame(
+    x = c(1, 2, 3),
+    y = c(1, 1, 1),
+    Watershed = factor(c("Kusko", "Nush", "Yukon"), levels = c("Kusko", "Nush", "Yukon"))
+  )
+  
+  legend_plot <- ggplot(legend_data, aes(x = x, y = y, color = Watershed)) +
+    geom_point(size = 12, alpha = 0.9, stroke = 0.5) +
+    scale_color_manual(
+      values = colors,
+      name = "Watershed",
+      breaks = c("Kusko", "Nush", "Yukon"),
+      labels = c("Kusko", "Nush", "Yukon")
+    ) +
+    guides(color = guide_legend(
+      title = "Watershed",
+      title.position = "top",
+      title.hjust = 0.5,
+      override.aes = list(size = 12, alpha = 0.9),
+      nrow = 1,
+      label.position = "bottom"
+    )) +
+    theme_void() +
+    theme(
+      legend.position = "bottom",
+      legend.direction = "horizontal",
+      legend.title = element_text(size = 40, face = "bold", color = "grey20", margin = margin(b = 15)),
+      legend.text = element_text(size = 36, color = "grey30", margin = margin(l = 10, r = 10)),
+      legend.key.size = unit(5, "lines"),
+      legend.key = element_blank(),
+      legend.spacing.x = unit(2.5, "cm"),
+      legend.margin = margin(t = 40, b = 20),
+      legend.box.margin = margin(t = 30),
+      plot.margin = margin(20, 20, 20, 20)
     )
+  
+  legend_grob <- cowplot::get_legend(legend_plot)
+  
+  # Combine plots using plot_grid with explicit background
+  combined_plot_with_legend <- cowplot::plot_grid(
+    combined_plots,
+    legend_grob,
+    ncol = 1,
+    rel_heights = c(1, 0.12),
+    align = "v"
+  )
   
   combined_filename <- paste0(dataset_name, "_Combined_PCA_Views_Enhanced.pdf")
   combined_filepath <- file.path(output_directory, combined_filename)
@@ -281,7 +315,7 @@ create_additional_pca_plots <- function(gam_data, dataset_name, output_directory
     var_explained = var_explained,
     pca_result = pca_result,
     pc1_pc2_plot = pc1_pc2_plot,
-    pc2_pc3_plot = pc2_pc3_plot_with_legend,
+    pc2_pc3_plot = pc2_pc3_plot_no_legend,
     combined_plot = combined_plot_with_legend
   ))
 }

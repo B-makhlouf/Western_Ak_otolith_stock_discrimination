@@ -63,9 +63,14 @@ print(paste("Combined figure saved to:", output_path1))
 
 # ===== SECOND FIGURE: PCA plots (1 row, 2 panels) =====
 # File paths for PCA figures
-pca_path1 <- "/Users/benjaminmakhlouf/Research_repos/04_Western_Ak_otolith_stock_discrimination/Figures/PCA/SAME_NO_7080_7085_2d_plots/SAME_NO_7080_7085_Combined_PCA_Views_Enhanced.pdf"
-pca_path2 <- "/Users/benjaminmakhlouf/Research_repos/04_Western_Ak_otolith_stock_discrimination/Figures/PCA/SAME_NO_7080_7085_ts_loadings/Specific_Four_Individuals_SAME_NO_7080_7085_Comparison.pdf"
-output_path2 <- "/Users/benjaminmakhlouf/Research_repos/04_Western_Ak_otolith_stock_discrimination/Figures/PCA_Combined_2Panel.pdf"
+
+label_size <- 75  # Increased from 75 to 200
+x_pos <- 100       # Increased offset slightly
+y_pos <- 100       # Increased offset slightly
+
+pca_path1 <- "/Users/benjaminmakhlouf/Research_repos/04_Western_Ak_otolith_stock_discrimination/Figures/PCA Figures/SAME_NO_7080_7085_Combined_PCA_Views_Enhanced.pdf"
+pca_path2 <- "/Users/benjaminmakhlouf/Research_repos/04_Western_Ak_otolith_stock_discrimination/Figures/PCA Figures/Four_Panel_PCA_Loadings_Comparison.pdf"
+output_path2 <- "/Users/benjaminmakhlouf/Research_repos/04_Western_Ak_otolith_stock_discrimination/Figures/PCA Figures/PCA_Combined_2Panel.pdf"
 
 # Read BOTH PDFs at the same density
 img_pca1 <- image_read_pdf(pca_path1, density = density, pages = 1)
