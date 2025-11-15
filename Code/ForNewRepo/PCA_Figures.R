@@ -1,6 +1,8 @@
 # PCA_Loadings_Individual_TimeSeries.R
 # Creates individual three-panel figures for each selected fish showing PC1, PC2, PC3 loadings
 # Also creates summary PCA plots and 2D PCA comparison plots
+# UPDATED: Changed legend labels to descriptive text and increased text sizes for publication
+# UPDATED: Removed "Time Point" caption from bottom of four-panel figure
 
 # =============================================================================
 # SETUP
@@ -25,9 +27,9 @@ same_no_range <- list(
 )
 
 # Paths and colors
-gam_data_path <- "/Users/benjaminmakhlouf/Research_repos/04_Western_Ak_otolith_stock_discrimination/data/LA_Data/Preprocessed_ts_matrices/NatalToMarine_Processed_GAM.csv"
-raw_data_path <- "/Users/benjaminmakhlouf/Research_repos/04_Western_Ak_otolith_stock_discrimination/data/LA_Data/Preprocessed_ts_matrices/NatalToMarine_Processed_RAW.csv"
-output_dir <- "/Users/benjaminmakhlouf/Research_repos/04_Western_Ak_otolith_stock_discrimination/Figures/PCA Figures"
+gam_data_path <- "/Users/benjaminmakhlouf/Research_repos/03_Western_Ak_otolith_stock_discrimination/data/LA_Data/Preprocessed_ts_matrices/NatalToMarine_Processed_GAM.csv"
+raw_data_path <- "/Users/benjaminmakhlouf/Research_repos/03_Western_Ak_otolith_stock_discrimination/data/LA_Data/Preprocessed_ts_matrices/NatalToMarine_Processed_RAW.csv"
+output_dir <- "/Users/benjaminmakhlouf/Research_repos/03_Western_Ak_otolith_stock_discrimination/Figures/PCA Figures"
 watershed_colors <- c("Kusko" = "firebrick", "Nush" = "darkgreen", "Yukon" = "dodgerblue")
 
 dir.create(output_dir, recursive = TRUE, showWarnings = FALSE)
@@ -383,8 +385,10 @@ if(nrow(available_specific_fish) >= 1) {
   pc2_range <- range(loadings_df_combined$PC2_abs, na.rm = TRUE)
   pc3_range <- range(loadings_df_combined$PC3_abs, na.rm = TRUE)
   
+  # UPDATED FUNCTION WITH LARGER, BOLD TEXT AND DESCRIPTIVE LEGEND LABELS
   create_fish_panel_custom <- function(fish_id, pc_num, show_legend = FALSE, show_y_title = FALSE, 
-                                       is_middle = FALSE, custom_title = NULL, show_title = TRUE) {
+                                       is_middle = FALSE, custom_title = NULL, show_title = TRUE,
+                                       show_x_text = TRUE, show_y_text = TRUE) {
     
     fish_data_gam <- gam_data_same_no %>% filter(Fish_id == fish_id)
     fish_data_raw <- raw_data_same_no %>% filter(Fish_id == fish_id)
@@ -406,17 +410,18 @@ if(nrow(available_specific_fish) >= 1) {
       PC3_abs = loadings_df_combined$PC3_abs
     )
     
+    # UPDATED: Descriptive legend labels instead of symbols
     if(pc_num == 1) {
       color_var <- fish_ts_df$PC1_abs
-      legend_name <- "|PC1|"
+      legend_name <- "PC1 Loadings\n(absolute value)"
       color_limits <- pc1_range
     } else if(pc_num == 2) {
       color_var <- fish_ts_df$PC2_abs
-      legend_name <- "|PC2|"
+      legend_name <- "PC2 Loadings\n(absolute value)"
       color_limits <- pc2_range
     } else {
       color_var <- fish_ts_df$PC3_abs
-      legend_name <- "|PC3|"
+      legend_name <- "PC Loadings\n(absolute value)"
       color_limits <- pc3_range
     }
     
@@ -435,8 +440,9 @@ if(nrow(available_specific_fish) >= 1) {
         direction = -1,
         limits = color_limits,
         guide = if(show_legend) {
-          guide_colorbar(barwidth = 8, barheight = 0.6, title.position = "top",
-                         title.hjust = 0.5, frame.colour = "grey70", frame.linewidth = 0.3)
+          # UPDATED: Increased legend bar size and text sizes significantly
+          guide_colorbar(barwidth = 12, barheight = 1.2, title.position = "top",
+                         title.hjust = 0.5, frame.colour = "grey70", frame.linewidth = 0.5)
         } else {
           "none"
         }
@@ -449,28 +455,32 @@ if(nrow(available_specific_fish) >= 1) {
         x = if(pc_num == 3) "Time Point" else NULL,
         y = if(show_y_title) expression(paste(""^87, "Sr/", ""^86, "Sr")) else NULL
       ) +
-      theme_minimal(base_size = 10) +
+      theme_minimal(base_size = 18) +  # INCREASED base size from 10 to 18
       theme(
-        plot.title = element_text(size = 11, face = "bold", hjust = 0.5, color = "grey15", margin = margin(b = 8)),
+        plot.title = element_text(size = 22, face = "bold", hjust = 0.5, color = "grey15", margin = margin(b = 12)),  # Increased from 11 to 22
         plot.background = element_rect(fill = "white", color = NA),
         panel.background = element_rect(fill = "white", color = NA),
-        axis.title.y = element_text(size = 10, face = "bold", color = "grey20", margin = margin(r = 6)),
-        axis.title.x = element_text(size = 10, face = "bold", color = "grey20", margin = margin(t = 6)),
-        axis.text = element_text(size = 9, color = "grey30"),
-        axis.line = element_line(color = "grey60", size = 0.4),
-        axis.ticks = element_line(color = "grey60", size = 0.3),
-        axis.ticks.length = unit(2, "pt"),
-        panel.grid.major = element_line(color = "grey90", size = 0.25),
+        axis.title.y = element_text(size = 20, face = "bold", color = "grey20", margin = margin(r = 10)),  # Increased from 10 to 20
+        axis.title.x = element_text(size = 20, face = "bold", color = "grey20", margin = margin(t = 10)),  # Increased from 10 to 20
+        axis.text.x = if(show_x_text) element_text(size = 18, face = "bold", color = "grey30") else element_blank(),  # Control x-axis text visibility
+        axis.text.y = if(show_y_text) element_text(size = 18, face = "bold", color = "grey30") else element_blank(),  # Control y-axis text visibility
+        axis.line = element_line(color = "grey60", size = 0.6),  # Increased from 0.4 to 0.6
+        axis.ticks = element_line(color = "grey60", size = 0.5),  # Increased from 0.3 to 0.5
+        axis.ticks.x = if(show_x_text) element_line(color = "grey60", size = 0.5) else element_blank(),  # Control x-axis ticks
+        axis.ticks.y = if(show_y_text) element_line(color = "grey60", size = 0.5) else element_blank(),  # Control y-axis ticks
+        axis.ticks.length = unit(4, "pt"),  # Increased from 2 to 4
+        panel.grid.major = element_line(color = "grey90", size = 0.4),  # Increased from 0.25 to 0.4
         panel.grid.minor = element_blank(),
         legend.position = if(show_legend) "bottom" else "none",
-        legend.title = element_text(size = 9, face = "bold", color = "grey20"),
-        legend.text = element_text(size = 8, color = "grey30"),
+        # UPDATED: Significantly increased legend text sizes and made them bold
+        legend.title = element_text(size = 18, face = "bold", color = "grey20", margin = margin(b = 8)),  # Increased from 16 to 18
+        legend.text = element_text(size = 16, face = "bold", color = "grey30"),  # Increased from 14 to 16
         legend.key = element_blank(),
-        legend.margin = margin(t = 6),
-        legend.box.margin = margin(t = 4),
+        legend.margin = margin(t = 12),  # Increased margin
+        legend.box.margin = margin(t = 10),  # Increased margin
         legend.justification = if(is_middle) "center" else "center",
-        plot.margin = margin(6, 8, 6, 8),
-        panel.spacing = unit(4, "pt")
+        plot.margin = margin(10, 12, 10, 12),  # Increased margins
+        panel.spacing = unit(6, "pt")  # Increased from 4 to 6
       )
     
     return(p)
@@ -484,31 +494,42 @@ if(nrow(available_specific_fish) >= 1) {
     
     # Create the three PC panels for this fish
     # Only show title in the first row (PC1)
+    # UPDATED: Only show legend in bottom-middle panel (PC3, fish2)
+    # Only show x-axis label in bottom row (PC3)
+    # Only show y-axis label in leftmost column (fish1)
+    # Only show x-axis TEXT/NUMBERS in bottom row (PC3)
+    # Only show y-axis TEXT/NUMBERS in leftmost column (fish1)
     specific_panels[[paste0("pc1_fish", fish_idx)]] <- create_fish_panel_custom(
       fish_id, 1, 
-      show_legend = (fish_idx == 2), # Show legend on second fish
-      show_y_title = (fish_idx == 1), # Show y-title on first fish
-      is_middle = (fish_idx == 2),
+      show_legend = FALSE, # No legend in PC1 row
+      show_y_title = (fish_idx == 1), # Show y-title only on first fish
+      is_middle = FALSE,
       custom_title = fish_labels[[fish_id]],  # Use custom label
-      show_title = TRUE  # Show title only in first row
+      show_title = TRUE,  # Show title only in first row
+      show_x_text = FALSE,  # No x-axis numbers in top row
+      show_y_text = (fish_idx == 1)  # Only show y-axis numbers on leftmost column
     )
     
     specific_panels[[paste0("pc2_fish", fish_idx)]] <- create_fish_panel_custom(
       fish_id, 2, 
-      show_legend = (fish_idx == 2), # Show legend on second fish
-      show_y_title = (fish_idx == 1), # Show y-title on first fish
-      is_middle = (fish_idx == 2),
+      show_legend = FALSE, # No legend in PC2 row
+      show_y_title = (fish_idx == 1), # Show y-title only on first fish
+      is_middle = FALSE,
       custom_title = fish_labels[[fish_id]],
-      show_title = FALSE  # No title in subsequent rows
+      show_title = FALSE,  # No title in subsequent rows
+      show_x_text = FALSE,  # No x-axis numbers in middle row
+      show_y_text = (fish_idx == 1)  # Only show y-axis numbers on leftmost column
     )
     
     specific_panels[[paste0("pc3_fish", fish_idx)]] <- create_fish_panel_custom(
       fish_id, 3, 
-      show_legend = (fish_idx == 2), # Show legend on second fish
-      show_y_title = (fish_idx == 1), # Show y-title on first fish
+      show_legend = (fish_idx == 2), # Show legend ONLY on bottom-middle panel
+      show_y_title = (fish_idx == 1), # Show y-title only on first fish
       is_middle = (fish_idx == 2),
       custom_title = fish_labels[[fish_id]],
-      show_title = FALSE  # No title in subsequent rows
+      show_title = FALSE,  # No title in subsequent rows
+      show_x_text = TRUE,  # Show x-axis numbers in bottom row
+      show_y_text = (fish_idx == 1)  # Only show y-axis numbers on leftmost column
     )
   }
   
@@ -520,7 +541,7 @@ if(nrow(available_specific_fish) >= 1) {
       (specific_panels$pc3_fish1 | specific_panels$pc3_fish2 | specific_panels$pc3_fish3 | specific_panels$pc3_fish4) +
       plot_layout(heights = c(1, 1, 1))
     
-    figure_width <- 16
+    figure_width <- 17
     figure_height <- 12
     
   } else if(nrow(available_specific_fish) == 3) {
@@ -530,7 +551,7 @@ if(nrow(available_specific_fish) >= 1) {
       (specific_panels$pc3_fish1 | specific_panels$pc3_fish2 | specific_panels$pc3_fish3) +
       plot_layout(heights = c(1, 1, 1))
     
-    figure_width <- 12
+    figure_width = 13
     figure_height <- 12
     
   } else if(nrow(available_specific_fish) == 2) {
@@ -540,7 +561,7 @@ if(nrow(available_specific_fish) >= 1) {
       (specific_panels$pc3_fish1 | specific_panels$pc3_fish2) +
       plot_layout(heights = c(1, 1, 1))
     
-    figure_width <- 8
+    figure_width <- 9
     figure_height <- 12
     
   } else {
@@ -550,12 +571,12 @@ if(nrow(available_specific_fish) >= 1) {
       (specific_panels$pc3_fish1) +
       plot_layout(heights = c(1, 1, 1))
     
-    figure_width <- 4
+    figure_width <- 5
     figure_height <- 12
   }
   
   # Save the specific combined figure
-  specific_combined_filename <- "Four_Panel_PCA_Loadings_Comparison.pdf"
+  specific_combined_filename <- "Four_Panel_PCA_Loadings_Comparison_UPDATED.pdf"
   specific_combined_filepath <- file.path(output_dir, specific_combined_filename)
   
   ggsave(specific_combined_filepath, specific_combined_figure, 
